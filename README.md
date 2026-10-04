@@ -19,7 +19,6 @@ Tests (génère un PDF, simule des copies photographiées de travers / bruitées
 uv run pytest
 ```
 
-Docker : `docker build -t qcm . && docker run -p 8000:8000 --env-file .env qcm`
 
 ### Génération par IA (facultatif)
 
@@ -39,6 +38,45 @@ est exposé. `OPENROUTER_BASE_URL` permet un autre point d'accès compatible Ope
 > **HTTPS obligatoire hors localhost** : WebCrypto (chiffrement du QR), le service worker et
 > l'installation PWA ne fonctionnent qu'en contexte sécurisé. Derrière Caddy/Traefik, ou en
 > test sur le LAN : `tailscale serve`, `cloudflared tunnel`, ou un certificat `mkcert`.
+
+## Déploiement (Docker + Cloudflare Tunnel)
+
+L'image est construite et publiée par GitHub Actions sur `ghcr.io/ralphi2811/proto-qcm`
+(`.github/workflows/ci.yml`) : tests → construction → test de fumée du conteneur →
+publication (`latest` pour `main`, `sha-xxxxxxx`, et `1.2.0` / `1.2` pour un tag `v1.2.0`).
+Les pull requests sont testées et construites, sans publication.
+
+Sur le serveur (Docker + Compose), seuls `docker-compose.yml` et `.env` sont nécessaires :
+
+```bash
+cp .env.example .env    # OPENROUTER_API_KEY, AI_ACCESS_CODE, CLOUDFLARE_TUNNEL_TOKEN…
+docker compose pull && docker compose up -d
+```
+
+1. **Tunnel** : Cloudflare Zero Trust → Networks → Tunnels → *Create a tunnel*
+   (Cloudflared) → copier le jeton dans `CLOUDFLARE_TUNNEL_TOKEN`. Onglet *Public
+   Hostname* : `qcm.mondomaine.fr` → service `HTTP` `app:8000`. Aucun port à ouvrir ; le
+   HTTPS fourni par Cloudflare suffit pour la caméra, le chiffrement et l'installation PWA.
+2. **Image** : le paquet GHCR est privé par défaut. Le rendre public (GitHub → Packages →
+   proto-qcm → *Package settings* → *Change visibility*) ou faire `docker login ghcr.io`
+   sur le serveur avec un jeton `read:packages`.
+3. **Sécurité** : l'app n'a pas de comptes. Définir `AI_ACCESS_CODE` (sinon n'importe qui
+   peut consommer les crédits OpenRouter) ; pour restreindre tout l'accès, ajouter une
+   application Cloudflare Access (e-mail à usage unique) devant le nom d'hôte.
+   Le conteneur tourne sans root, en lecture seule. Cloudflare limite les envois à 100 Mo
+   (PDF de scanner : 80 Mo max côté app).
+
+**Mise à jour automatique**, au choix :
+
+- *Par la CI (SSH)* : variable de dépôt `DEPLOY_ENABLED=true`, variable `DEPLOY_PATH`
+  (dossier du compose sur le serveur, `DEPLOY_PORT` si ≠ 22), secrets `DEPLOY_HOST`,
+  `DEPLOY_USER`, `DEPLOY_SSH_KEY` (clé privée dédiée) et `DEPLOY_KNOWN_HOSTS`
+  (`ssh-keyscan -p 22 hote`). Chaque push sur `main` fait `docker compose pull && up -d`.
+  Nécessite un SSH joignable depuis GitHub.
+- *Par le serveur (sans SSH entrant, adapté au tunnel)* : une tâche cron
+  `*/10 * * * * cd /srv/qcm && docker compose pull -q app && docker compose up -d`.
+
+Construction locale : `docker compose up -d --build` (utilise le `Dockerfile`).
 
 ## Fonctionnement
 
@@ -71,8 +109,8 @@ déchiffre le QR avec sa clé, note, enregistre localement
   Contenu : en-tête clair (géométrie de la grille + id) puis corrigé, barème et mode de
   notation chiffrés en AES-128-GCM avec la clé de l'enseignant.
 - **Identité** : cartouche Nom / Prénom / Classe à cadres fixes. L'OMR renvoie le recadrage
-  de chaque cadre, affiché à côté du champ à saisir lors de la correction (point d'entrée
-  d'un futur OCR).
+  de chaque cadre ; l'IA le lit et le rapproche de la liste de classe (Réglages), les
+  champs restent modifiables.
 - **Deux tailles de cases** : grandes (6 mm, pour le primaire, ~60 questions) ou standard
   (4 mm, ~130 questions). La taille est inscrite dans l'en-tête du QR.
 - **Gestes acceptés** : case cochée ✓, croix ou noircie → lue ; case **entourée** → signalée
@@ -102,4 +140,4 @@ tests/          tests bout en bout avec photos simulées
 - Mode grille : une seule page de grille (jusqu'à ~130 questions à 4 choix).
 - localStorage (~5 Mo) : passer à IndexedDB si beaucoup d'images.
 - À venir : sujets mélangés A/B (le QR par copie le permet déjà), formules (KaTeX),
-  OCR des noms (pré-remplissage), import de liste d'élèves, lecture en flux vidéo.
+  mode scan en rafale (enchaîner les copies sans fermer la caméra).

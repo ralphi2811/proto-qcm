@@ -1,0 +1,39 @@
+# QCM Studio + Cloudflare Tunnel.
+#   cp .env.example .env   # puis renseigner au moins CLOUDFLARE_TUNNEL_TOKEN et AI_ACCESS_CODE
+#   docker compose pull && docker compose up -d
+# Le tunnel publie l'app en HTTPS (obligatoire pour WebCrypto, la caméra et la PWA) sans
+# ouvrir de port sur la machine. Dans Cloudflare Zero Trust → Networks → Tunnels, le nom
+# d'hôte public doit pointer vers le service : http://app:8000
+
+services:
+  app:
+    image: ghcr.io/ralphi2811/proto-qcm:${QCM_TAG:-latest}
+    build: .
+    restart: unless-stopped
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
+      AI_ACCESS_CODE: ${AI_ACCESS_CODE:-}
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    # accès direct depuis la machine (facultatif) ; le public passe par le tunnel
+    ports:
+      - "127.0.0.1:${QCM_PORT:-8000}:8000"
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/app/.cache
+    security_opt:
+      - no-new-privileges:true
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?renseignez CLOUDFLARE_TUNNEL_TOKEN dans .env}
+    depends_on:
+      app:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true

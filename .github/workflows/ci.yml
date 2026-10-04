@@ -1,0 +1,121 @@
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bibliothèques système (WeasyPrint, polices)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fontconfig fonts-dejavu-core
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest -q
+
+  image:
+    name: Image Docker
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=pr
+
+      # construit l'image et vérifie qu'elle démarre et génère un PDF avant toute publication
+      - name: Construction
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: proto-qcm:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Test de fumée
+        run: |
+          docker run -d --name qcm --read-only --tmpfs /tmp --tmpfs /home/app/.cache -p 8000:8000 proto-qcm:ci
+          for _ in $(seq 30); do curl -fs localhost:8000/api/health && break; sleep 1; done
+          curl -fs -o /dev/null localhost:8000/
+          curl -fs -X POST localhost:8000/api/layout -H 'Content-Type: application/json' \
+            -d '{"exam":{"title":"CI","questions":[{"html":"Q ?","options":[{"html":"A"},{"html":"B"}]}]},"box_size":"large"}'
+          echo
+          test "$(docker inspect -f '{{.State.Running}}' qcm)" = true
+          docker logs qcm
+
+      - name: Connexion à GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publication
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
+  # Déploiement facultatif par SSH : activé si la variable de dépôt DEPLOY_ENABLED vaut "true".
+  # Secrets : DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS ; variables :
+  # DEPLOY_PATH (dossier contenant docker-compose.yml et .env), DEPLOY_PORT (22 par défaut).
+  deploy:
+    name: Déploiement
+    needs: image
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: docker compose pull && up
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          DIR: ${{ vars.DEPLOY_PATH }}
+          PORT: ${{ vars.DEPLOY_PORT || '22' }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/id_deploy -p "$PORT" -o StrictHostKeyChecking=yes "$USER@$HOST" \
+            "cd '$DIR' && docker compose pull app && docker compose up -d --remove-orphans && docker image prune -f"

@@ -76,6 +76,14 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
   la fin de la copie précédente. Fenêtre PDF : 1 exemplaire = non numéroté (case désactivée).
 - Transfert de clé : Réglages → « Scanner la clé d'un autre appareil » (caméra en direct via
   BarcodeDetector sur Chrome Android, sinon photo décodée par `POST /api/qr/decode`).
+- Mode scan (`camera.js` + `markers.js`) : caméra en direct, détection des 4 repères sur le
+  téléphone (seuillage adaptatif + composantes carrées + quadrilatère A4 aux angles ~droits),
+  guidage (cadrage, distance, lumière, reflet, flou), déclenchement auto après 0,7 s stable,
+  lampe si dispo, photo pleine résolution via ImageCapture (sinon image vidéo). Rafale : à faire.
+- Déploiement : `Dockerfile` multi-étapes (uv, non-root, healthcheck, fontconfig requis pour
+  `fc-match`), `docker-compose.yml` (app en lecture seule + cloudflared, jeton
+  `CLOUDFLARE_TUNNEL_TOKEN`, hôte public → http://app:8000), CI `.github/workflows/ci.yml`
+  (pytest → build → fumée → GHCR ; déploiement SSH optionnel via `vars.DEPLOY_ENABLED`).
 - Mobile : pas de backdrop-filter sur `.topbar` (il retenait la barre d'onglets fixe en haut).
 
 - **Densité** (2026-10-04) : `exam.density` = `large` / `normal` / `compact`

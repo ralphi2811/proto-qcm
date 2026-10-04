@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+.env
+.env.*
+!.env.example
+certs
+tests
+.pytest_cache
+**/__pycache__
+*.pyc
+.claude
+docker-compose*.yml
+REPRISE.md
