@@ -65,6 +65,20 @@ async def scan(image: UploadFile = File(...), params: str | None = Form(None)):
         raise HTTPException(422, str(e)) from e
 
 
+@app.post("/api/qr/decode")
+async def qr_decode(image: UploadFile = File(...)):
+    data = await image.read(MAX_UPLOAD + 1)
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, "Image trop lourde")
+    try:
+        text = await run_in_threadpool(omr.read_qr_text, data)
+    except omr.ScanError as e:
+        raise HTTPException(422, str(e)) from e
+    if not text:
+        raise HTTPException(422, "Aucun QR code trouvé sur la photo")
+    return {"text": text}
+
+
 @app.post("/api/scan-pdf")
 async def scan_pdf(file: UploadFile = File(...), params: str | None = Form(None)):
     """PDF issu d'un scanner / d'une imprimante : chaque page est analysée comme une photo.

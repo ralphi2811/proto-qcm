@@ -71,13 +71,16 @@ main { max-width: 920px; margin: 0 auto; padding: 24px 16px 120px; outline: none
 .spacer { flex: 1; }
 
 @media (max-width: 720px) {
-  .topbar { padding: 8px 14px; }
+  /* pas de backdrop-filter ici : il ferait du bandeau le repère des éléments fixes,
+     et la barre d'onglets resterait collée au bandeau au lieu du bas de l'écran */
+  .topbar { padding: 8px 14px; backdrop-filter: none; background: var(--surface); }
   .tabs {
     position: fixed; bottom: 0; left: 0; right: 0; justify-content: space-around; z-index: 30;
     background: var(--surface); border-top: 1px solid var(--border);
     padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
   }
   .tabs a { font-size: .85rem; padding: 8px 10px; }
+  .format-bar { top: 52px; } /* sous le bandeau, plus bas sur mobile */
   main { padding-bottom: 150px; }
   h1 { font-size: 1.35rem; }
 }
@@ -244,7 +247,7 @@ input:focus, select:focus, .rich:focus { outline: 2px solid color-mix(in srgb, v
 /* ---------- réglages ---------- */
 .key-line { display: flex; align-items: center; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
 .key { font-size: 1.05rem; padding: 8px 12px; background: var(--surface-2); border-radius: 10px; letter-spacing: .03em; word-break: break-all; }
-.qr-box svg { width: 220px; height: 220px; background: #fff; border-radius: 10px; padding: 6px; margin-top: 12px; }
+.qr-box svg { display: block; box-sizing: border-box; width: min(240px, 100%); height: auto; aspect-ratio: 1; background: #fff; border-radius: 10px; padding: 6px; margin-top: 12px; }
 .card .row { margin-top: 10px; }
 .card h3 + p { margin-top: 6px; }
 
@@ -358,3 +361,4 @@ input:focus, select:focus, .rich:focus { outline: 2px solid color-mix(in srgb, v
 .ident-status .tag.error { background: var(--danger-soft); color: var(--danger); }
 .scan-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: end; }
 .spinner.small { width: 11px; height: 11px; border-width: 2px; display: inline-block; vertical-align: -1px; }
+.qr-video { width: 100%; max-height: 60vh; aspect-ratio: 1; object-fit: cover; border-radius: 12px; background: #000; }

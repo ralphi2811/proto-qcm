@@ -392,7 +392,21 @@ function pdfDialog(exam, onDensity = () => {}) {
   // mode sujet
   const copies = h('input', { type: 'number', min: 1, max: 200, value: exam.lastCopies || 1 });
   const numbered = h('input', { type: 'checkbox', checked: (exam.lastCopies || 1) > 1 });
-  copies.addEventListener('input', () => { numbered.checked = Number(copies.value) > 1; });
+  const copiesHint = h('p', { class: 'muted small' });
+  const syncCopies = () => {
+    const one = (Number(copies.value) || 1) <= 1;
+    // un seul exemplaire = un original à photocopier : un numéro serait recopié sur toutes les copies
+    if (one) numbered.checked = false;
+    numbered.disabled = one;
+    copiesHint.textContent = one
+      ? 'Un exemplaire, à photocopier : à la correction, les pages sont regroupées dans l\'ordre. Traitez chaque copie en entier (page 1, puis 2…) avant la suivante ; un scanner à chargeur avec les copies agrafées le fait tout seul.'
+      : numbered.checked
+        ? 'Numérotés (un exemplaire par élève, ne pas photocopier) : les pages de chaque élève sont regroupées automatiquement, dans n\'importe quel ordre.'
+        : 'Non numérotés : à la correction, traitez chaque copie en entier (page 1, puis 2…) avant la suivante.';
+  };
+  copies.addEventListener('input', () => { numbered.checked = Number(copies.value) > 1; syncCopies(); });
+  numbered.addEventListener('change', syncCopies);
+  syncCopies();
   // mode grille
   const subject = h('input', { type: 'checkbox', checked: true });
   const sheets = h('input', { type: 'number', min: 0, max: 200, value: 1 });
@@ -427,9 +441,7 @@ function pdfDialog(exam, onDensity = () => {}) {
             h('label', { class: 'field inline' }, h('span', {}, 'Exemplaires'), copies),
             h('label', { class: 'check' }, numbered, 'Numéroter (un exemplaire par élève)'),
           ),
-          h('p', { class: 'muted small' },
-            'Numérotés : les pages de chaque élève sont regroupées automatiquement à la correction, dans n\'importe quel ordre. ',
-            'Non numéroté (pour photocopier) : photographiez les pages de chaque copie dans l\'ordre, page 1 en premier.'))
+          copiesHint)
       : h('div', { class: 'row wrap' },
           h('label', { class: 'check' }, subject, 'Inclure le sujet'),
           h('label', { class: 'field inline' }, h('span', {}, 'Grilles de réponses'), sheets),

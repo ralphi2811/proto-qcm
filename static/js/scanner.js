@@ -169,22 +169,50 @@ export function renderScanner(view) {
     }
   }
 
-  /** Range une page lue dans la bonne copie (nouvelle ou en cours d'assemblage). */
+  /**
+   * Range une page lue dans la bonne copie (nouvelle ou en cours d'assemblage).
+   * Exemplaires numérotés : regroupement par numéro, pages dans n'importe quel ordre. Si la copie
+   * de ce numéro a déjà cette page, l'original a été photocopié : on regroupe alors dans l'ordre,
+   * comme pour un sujet non numéroté. Les situations ambiguës sont signalées sur la copie.
+   */
+  let photocopyWarned = false;
   function attach(scan, key, localExam, source) {
-    const open = copies.filter((c) => !c.saved && !c.discarded && c.examId === key.examId);
-    let copy = null;
     const p = scan.page;
-    if (p && p.copy > 0) {
-      copy = open.find((c) => c.copyNo === p.copy) ?? null; // exemplaire numéroté
-    } else if (p && p.page > 1) {
-      // non numéroté : la page rejoint la dernière copie commencée à laquelle elle manque
-      copy = open.filter((c) => c.copyNo === 0 && !c.pages.has(p.page)).at(-1) ?? null;
+    const page = p?.page ?? 1;
+    const copyNo = p?.copy ?? 0;
+    const group = copies.filter((c) => !c.saved && !c.discarded && c.examId === key.examId && c.copyNo === copyNo);
+    const lacking = group.filter((c) => !c.pages.has(page));
+    const latest = group.at(-1) ?? null;
+    let copy = null;
+    const notes = [];
+
+    if (copyNo > 0) {
+      copy = lacking.at(-1) ?? null;
+      if (!copy && latest) {
+        notes.push(`Même numéro d'exemplaire (n° ${copyNo}) qu'une autre copie : sujet photocopié ? Les pages sont regroupées dans l'ordre. `
+          + 'S\'il s\'agit d\'une photo reprise, ignorez l\'ancienne copie.');
+        if (!photocopyWarned) {
+          photocopyWarned = true;
+          toast('Copies photocopiées détectées : pages regroupées dans l\'ordre', 'warn', 6000);
+        }
+      }
+    } else if (page > 1) {
+      copy = lacking.at(-1) ?? null;
+      if (!copy) notes.push(`Page ${page} arrivée sans sa page 1 : pages dans le désordre ? Cette copie est incomplète.`);
+    }
+    if (copy && copy !== latest) {
+      copy.flag(`Page ${page} rattachée à une copie précédente (la copie suivante était déjà commencée) : vérifiez que les pages vont ensemble.`);
+    }
+    // une page 1 qui arrive alors que la copie précédente n'est pas finie : ordre suspect
+    if (!copy && page === 1 && latest?.pages.has(1) && latest.missingPages().length) {
+      latest.flag('La page 1 de la copie suivante est arrivée avant la fin de celle-ci : vérifiez l\'ordre des pages.');
     }
     if (!copy) {
-      copy = new Copy({ key, localExam, source, ctx, copyNo: p?.copy ?? 0, nPages: p?.n_pages ?? 1, onClose: (c) => c.card.remove() });
+      copy = new Copy({ key, localExam, source, ctx, copyNo, nPages: p?.n_pages ?? 1, onClose: (c) => c.card.remove() });
       copies.push(copy);
     }
-    copy.addPage(p?.page ?? 1, scan);
+    notes.forEach((n) => copy.flag(n));
+    copy.addPage(page, scan);
     queue.prepend(copy.card);
   }
 
@@ -241,6 +269,7 @@ class Copy {
     this.marks = new Map(); // "q:o" -> bool
     this.overridden = new Set();
     this.ident = {};
+    this.flags = new Set(); // alertes de regroupement des pages
     this.build();
   }
 
@@ -394,6 +423,11 @@ class Copy {
     return Object.fromEntries(Object.entries(this.ident).map(([k, el]) => [k, el.value.trim()]));
   }
 
+  flag(msg) {
+    this.flags.add(msg);
+    if (this.pages.size) this.update();
+  }
+
   missingPages() {
     return Array.from({ length: this.nPages }, (_, i) => i + 1).filter((p) => !this.pages.has(p));
   }
@@ -418,6 +452,7 @@ class Copy {
     const unsure = flagged((c) => c.state === 'unsure' && !c.circled);
     const warnings = [...this.pages.values()].flatMap((e) => e.scan.warnings || []);
     this.alerts.replaceChildren(...[
+      ...[...this.flags].map((f) => h('div', { class: 'alert warn' }, f)),
       missing.length ? h('div', { class: 'alert warn' },
         `Page${missing.length > 1 ? 's' : ''} manquante${missing.length > 1 ? 's' : ''} : ${missing.join(', ')} — photographiez-la${missing.length > 1 ? 's' : ''} (questions comptées 0 sinon).`) : null,
       warnings.length ? h('div', { class: 'alert warn' }, [...new Set(warnings)].join(' · ')) : null,

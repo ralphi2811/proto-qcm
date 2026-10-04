@@ -64,6 +64,90 @@ function editRoster(name, onDone) {
   (name ? text : nameInput).focus();
 }
 
+/** Clé contenue dans un QR de transfert (lien #/import-key/…) ou une clé tapée telle quelle. */
+function keyFromQrText(text) {
+  const m = text.match(/import-key\/([0-9a-fA-F-]+)/);
+  return parseKey(m ? m[1] : text);
+}
+
+/**
+ * Scan du QR de transfert affiché par un autre appareil : caméra en direct (BarcodeDetector,
+ * Chrome Android) ; sinon photo décodée sur l'appareil ou par le serveur.
+ */
+function scanKeyDialog() {
+  const detector = 'BarcodeDetector' in window ? new window.BarcodeDetector({ formats: ['qr_code'] }) : null;
+  const video = h('video', { class: 'qr-video', playsinline: true, muted: true, autoplay: true });
+  const status = h('p', { class: 'muted small' });
+  let stream = null;
+  let done = false;
+  const photo = h('input', {
+    type: 'file', accept: 'image/*', capture: 'environment', hidden: true,
+    onchange: async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      status.textContent = 'Lecture de la photo…';
+      try {
+        let text = null;
+        if (detector) {
+          const codes = await detector.detect(await createImageBitmap(file));
+          text = codes[0]?.rawValue ?? null;
+        }
+        if (!text) {
+          const fd = new FormData();
+          fd.append('image', file, 'qr.jpg');
+          text = (await (await api('/api/qr/decode', { method: 'POST', body: fd })).json()).text;
+        }
+        found(text);
+      } catch (err) { status.textContent = err.message; }
+    },
+  });
+  const dlg = modal('Scanner la clé d\'un autre appareil', h('div', { class: 'stack' },
+    h('p', { class: 'muted' }, 'Sur l\'autre appareil : Réglages → « Transférer vers un smartphone (QR) », puis visez le QR code.'),
+    detector && navigator.mediaDevices?.getUserMedia ? video : null,
+    status,
+    h('div', { class: 'row wrap' },
+      h('button', { class: 'btn', onclick: () => photo.click() }, icon('camera'), 'Prendre une photo du QR'),
+    ),
+    photo,
+  ));
+  const stop = () => { done = true; stream?.getTracks().forEach((t) => t.stop()); };
+  dlg.addEventListener('close', stop);
+
+  function found(text) {
+    let k;
+    try { k = keyFromQrText(text); }
+    catch { status.textContent = 'Ce QR code ne contient pas de clé de correction.'; return; }
+    stop();
+    dlg.close();
+    handleKeyImport(k);
+  }
+
+  if (detector && navigator.mediaDevices?.getUserMedia) {
+    status.textContent = 'Ouverture de la caméra…';
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      .then(async (s) => {
+        if (done) { s.getTracks().forEach((t) => t.stop()); return; }
+        stream = s;
+        video.srcObject = s;
+        await video.play().catch(() => {});
+        status.textContent = 'Visez le QR code…';
+        const tick = async () => {
+          if (done) return;
+          try {
+            const codes = video.readyState >= 2 ? await detector.detect(video) : [];
+            if (codes[0]?.rawValue) { found(codes[0].rawValue); if (done) return; }
+          } catch {}
+          setTimeout(tick, 250);
+        };
+        tick();
+      })
+      .catch(() => { video.remove(); status.textContent = 'Caméra indisponible : prenez une photo du QR code.'; });
+  } else {
+    status.textContent = 'Scan en direct non pris en charge par ce navigateur : prenez une photo du QR code.';
+  }
+}
+
 export function renderSettings(view) {
   const key = store.currentKey();
   const qrBox = h('div', { class: 'qr-box' });
@@ -101,6 +185,7 @@ export function renderSettings(view) {
         ),
         h('div', { class: 'row wrap' },
           h('button', { class: 'btn', onclick: showQr }, 'Transférer vers un smartphone (QR)'),
+          h('button', { class: 'btn', onclick: scanKeyDialog }, icon('camera'), 'Scanner la clé d\'un autre appareil'),
           h('button', {
             class: 'btn ghost danger',
             onclick: () => {

@@ -53,3 +53,19 @@ def test_scan_pdf_streams_each_page():
 def test_scan_pdf_rejects_garbage():
     r = client.post("/api/scan-pdf", files={"file": ("x.pdf", b"%PDF-nope", "application/pdf")})
     assert r.status_code == 422
+
+
+def test_qr_decode():
+    import cv2
+    import numpy as np
+    import segno
+
+    link = "https://192.168.1.58:8443/#/import-key/00112233445566778899aabbccddeeff"
+    img = np.array(segno.make(link, error="m").matrix, np.uint8)
+    img = cv2.resize((1 - img) * 255, None, fx=8, fy=8, interpolation=cv2.INTER_NEAREST)
+    img = cv2.copyMakeBorder(img, 40, 40, 40, 40, cv2.BORDER_CONSTANT, value=255)
+    ok, jpg = cv2.imencode(".jpg", img)
+    r = client.post("/api/qr/decode", files={"image": ("qr.jpg", jpg.tobytes(), "image/jpeg")})
+    assert r.status_code == 200 and r.json()["text"] == link
+    blank = cv2.imencode(".jpg", np.full((200, 200), 255, np.uint8))[1].tobytes()
+    assert client.post("/api/qr/decode", files={"image": ("b.jpg", blank, "image/jpeg")}).status_code == 422

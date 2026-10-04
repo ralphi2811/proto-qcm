@@ -75,6 +75,12 @@ def _read_qr(gray: np.ndarray) -> QrHit | None:
     return None
 
 
+def read_qr_text(data: bytes) -> str | None:
+    """Texte du premier QR code d'une photo (transfert de clé vers un téléphone sans BarcodeDetector)."""
+    hit = _read_qr(_load_gray(data))
+    return hit.text if hit else None
+
+
 # ----------------------------------------------------------------------- repères
 
 

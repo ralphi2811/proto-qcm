@@ -127,5 +127,5 @@ def render_pdf(req: PdfRequest) -> bytes:
 def qr_svg(text: str) -> str:
     qr = segno.make(text, error="m")
     buf = io.BytesIO()
-    qr.save(buf, kind="svg", scale=6, border=2)
+    qr.save(buf, kind="svg", scale=6, border=2, omitsize=True)  # viewBox seul : se redimensionne sans être rogné
     return buf.getvalue().decode()
