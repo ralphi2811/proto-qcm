@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>{{ exam.title }}</title>
+<style>
+  @page subject {
+    size: A4;
+    margin: 16mm 16mm 18mm;
+    @bottom-center { content: "{{ exam.title|e }} — page " counter(page); font: 8pt sans-serif; color: #666; }
+  }
+  @page sheet { size: A4; margin: 0; }
+
+  html { font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; font-size: 10.5pt; color: #111; }
+  body { margin: 0; }
+
+  /* ---------- Sujet ---------- */
+  .subject { page: subject; }
+  .subject header { border-bottom: 1.5pt solid #111; padding-bottom: 3mm; margin-bottom: 5mm; }
+  .subject h1 { font-size: 17pt; margin: 0 0 1mm; }
+  .subject .subtitle { color: #444; }
+  .subject .instructions { margin-top: 3mm; padding: 2.5mm 3.5mm; background: #f2f2f2; border-radius: 2mm; font-size: 9.5pt; }
+  .q { break-inside: avoid; margin: 0 0 5mm; }
+  .q-head { display: flex; gap: 2.5mm; }
+  .q-num { font-weight: bold; min-width: 9mm; }
+  .q-pts { color: #666; font-size: 8.5pt; white-space: nowrap; }
+  .q-body { flex: 1; }
+  .q-body img, .opt-body img { max-width: 100%; max-height: 70mm; }
+  .opts { list-style: none; margin: 2mm 0 0 11.5mm; padding: 0; }
+  .opts li { display: flex; gap: 2.5mm; margin: 1.2mm 0; align-items: baseline; }
+  .opt-letter { display: inline-block; min-width: 5mm; height: 5mm; line-height: 5mm; text-align: center;
+                border: 0.6pt solid #555; border-radius: 1.2mm; font-size: 8.5pt; font-weight: bold; }
+  code, pre { font-family: "DejaVu Sans Mono", monospace; font-size: 9pt; background: #f2f2f2; padding: 0 1mm; }
+  pre { padding: 2mm; white-space: pre-wrap; }
+  p { margin: 0 0 1.5mm; }
+
+  /* ---------- Grille ---------- */
+  .sheet { page: sheet; position: relative; width: 210mm; height: 297mm; overflow: hidden; break-before: page; }
+  .subject + .sheet, .sheet:first-child { break-before: auto; }
+  .abs { position: absolute; }
+  .marker { position: absolute; background: #000; width: {{ S.MARKER_SIZE }}mm; height: {{ S.MARKER_SIZE }}mm; }
+  .qr { position: absolute; }
+  {% set st = layout.style %}
+  .box { position: absolute; width: {{ st.box }}mm; height: {{ st.box }}mm; border: {{ 0.35 if large else 0.3 }}mm solid #222; box-sizing: border-box; border-radius: 0.5mm; background: #fff; }
+  .qlabel { position: absolute; width: {{ st.qnum_w - 1.5 }}mm; text-align: right; font-size: {{ st.font_pt }}pt; font-weight: bold; line-height: 6mm; margin-top: -3mm; }
+  .ohead { position: absolute; width: {{ st.opt_pitch }}mm; margin-left: -{{ st.opt_pitch / 2 }}mm; text-align: center; font-size: {{ st.font_pt - 0.5 }}pt; font-weight: bold; color: #333; line-height: {{ st.row_pitch }}mm; }
+  .stripe { position: absolute; background: #f0f0f0; height: {{ st.row_pitch }}mm; }
+  .help { position: absolute; display: flex; align-items: center; gap: 3mm; white-space: nowrap; font-size: {{ 10.5 if large else 8.5 }}pt; color: #222; }
+  .help img { height: 8mm; display: block; }
+  .help .sep { width: 6mm; }
+  .help .note { color: #555; font-size: 8pt; }
+  .namebox { position: absolute; border: 0.4mm solid #222; border-radius: 1.5mm; box-sizing: border-box; }
+  .nb-title { position: absolute; font-weight: bold; font-size: 10.5pt; white-space: nowrap; overflow: hidden; line-height: 5mm; }
+  .nb-hint { position: absolute; font-size: 7pt; color: #555; text-align: right; line-height: 5mm; white-space: nowrap; }
+  .nb-label { position: absolute; font-size: 9pt; color: #222; line-height: {{ S.NAME_FIELD_H }}mm; }
+  .nb-field { position: absolute; border: 0.25mm solid #999; border-radius: 0.8mm; box-sizing: border-box; }
+  .foot { position: absolute; font-size: 6.5pt; color: #777; }
+</style>
+</head>
+<body>
+
+{% if req.subject %}
+<section class="subject">
+  <header>
+    <h1>{{ exam.title }}</h1>
+    {% if exam.subtitle %}<div class="subtitle">{{ exam.subtitle }}</div>{% endif %}
+    {% if exam.instructions %}<div class="instructions">{{ exam.instructions|clean|safe }}</div>{% endif %}
+  </header>
+  {% for q in exam.questions %}
+  <div class="q">
+    <div class="q-head">
+      <div class="q-num">{{ loop.index }}.</div>
+      <div class="q-body">{{ q.html|clean|safe }}</div>
+      <div class="q-pts">{{ '%g'|format(q.points) }} pt{{ 's' if q.points > 1 else '' }}</div>
+    </div>
+    <ul class="opts">
+      {% for o in q.options %}
+      <li><span class="opt-letter">{{ letter(loop.index0) }}</span><div class="opt-body">{{ o.html|clean|safe }}</div></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% for _ in range(req.sheets) %}
+<section class="sheet">
+  {% for (mx, my) in S.MARKERS %}
+  <div class="marker" style="left: {{ mx - S.MARKER_SIZE / 2 }}mm; top: {{ my - S.MARKER_SIZE / 2 }}mm"></div>
+  {% endfor %}
+
+  <img class="qr" src="{{ qr_uri }}" style="left: {{ S.QR_BOX[0] }}mm; top: {{ S.QR_BOX[1] }}mm; width: {{ S.QR_BOX[2] }}mm; height: {{ S.QR_BOX[2] }}mm">
+
+  {% set nx, ny, nw, nh = S.NAME_BOX %}
+  <div class="namebox" style="left: {{ nx }}mm; top: {{ ny }}mm; width: {{ nw }}mm; height: {{ nh }}mm"></div>
+  <div class="nb-title" style="left: {{ nx + 3 }}mm; top: {{ ny + 1.2 }}mm; width: {{ nw - 50 }}mm">{{ exam.title }}</div>
+  <div class="nb-hint" style="left: {{ nx + nw - 63 }}mm; top: {{ ny + 1.2 }}mm; width: 60mm">écrire en MAJUSCULES dans les cadres</div>
+  {% for key, (label, fx, fy, fw, fh) in S.NAME_FIELDS.items() %}
+  <div class="nb-label" style="left: {{ nx + 3 }}mm; top: {{ fy }}mm">{{ label }}</div>
+  <div class="nb-field" style="left: {{ fx }}mm; top: {{ fy }}mm; width: {{ fw }}mm; height: {{ fh }}mm"></div>
+  {% endfor %}
+
+  <div class="help" style="left: {{ S.INNER_LEFT }}mm; top: {{ S.HELP_TOP }}mm; height: {{ S.HELP_H }}mm; width: {{ S.INNER_RIGHT - S.INNER_LEFT }}mm">
+    <img src="{{ check_svg }}" alt="">
+    {% if large %}<span><b>Coche</b> ta ou tes réponses</span>{% else %}<span><b>Cochez</b> ou noircissez les cases</span>{% endif %}
+    <span class="sep"></span>
+    <img src="{{ circle_svg }}" alt="">
+    {% if large %}<span><b>N'entoure pas</b> les cases</span>{% else %}<span><b>N'entourez pas</b> les cases</span>{% endif %}
+    {% if not large %}<span class="sep"></span><span class="note">Stylo foncé · annuler au correcteur</span>{% endif %}
+  </div>
+
+  {% for (hx, hy, l) in layout.option_headers %}
+  <div class="ohead" style="left: {{ hx }}mm; top: {{ hy }}mm">{{ l }}</div>
+  {% endfor %}
+
+  {% set col_w = st.qnum_w + layout.n_options * st.opt_pitch %}
+  {% for row in layout.question_boxes %}
+  {% set qi = loop.index0 %}
+  {% set lx, ly = layout.question_labels[qi] %}
+  {% if (qi % layout.rows) % 2 == 1 %}
+  <div class="stripe" style="left: {{ lx }}mm; top: {{ ly - st.row_pitch / 2 }}mm; width: {{ col_w }}mm"></div>
+  {% endif %}
+  <div class="qlabel" style="left: {{ lx }}mm; top: {{ ly }}mm">{{ qi + 1 }}</div>
+  {% for b in row[:n_options[qi]] %}
+  <div class="box" style="left: {{ b.x }}mm; top: {{ b.y }}mm"></div>
+  {% endfor %}
+  {% endfor %}
+
+  <div class="foot" style="left: {{ S.INNER_LEFT }}mm; top: {{ S.FOOTER_Y - 2.4 }}mm">
+    {{ exam.title }} · {{ exam_id }} · ne pas plier, ne pas écrire près des carrés noirs
+  </div>
+</section>
+{% endfor %}
+
+</body>
+</html>

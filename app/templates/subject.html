@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>{{ exam.title }}</title>
+<style>
+  @page { size: A4; margin: {{ M.top }}mm {{ M.side }}mm {{ M.bottom }}mm {{ M.side }}mm; }
+  {% for bg in backgrounds %}
+  @page :nth({{ loop.index }}) {
+    background: url("{{ bg }}") no-repeat -{{ M.side }}mm -{{ M.top }}mm;
+    background-size: 210mm 297mm;
+  }
+  {% endfor %}
+
+  html { font-family: "DejaVu Sans", "Liberation Sans", Arial, sans-serif; font-size: {{ D.font_pt }}pt; color: #111; }
+  body { margin: 0; }
+  .copy + .copy { break-before: page; }
+
+  .help { display: flex; align-items: center; gap: 3mm; white-space: nowrap; font-size: {{ D.help_pt }}pt; margin-bottom: {{ D.q_gap * 0.6 }}mm; }
+  .help img { height: 7mm; display: block; }
+  .help .sep { width: 6mm; }
+  .help .subtitle { margin-left: auto; color: #333; font-weight: bold; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .instructions { margin: 0 0 {{ D.q_gap }}mm; padding: {{ 1.2 if D.font_pt < 11 else 2 }}mm 3.5mm; background: #f2f2f2; border-radius: 2mm; font-size: 0.9em; }
+  .instructions p { margin: 0; }
+
+  .q { break-inside: avoid; margin: 0 0 {{ D.q_gap }}mm; }
+  .q-head { display: flex; gap: 2.5mm; align-items: baseline; }
+  .q-num { font-weight: bold; min-width: 9mm; }
+  .q-body { flex: 1; }
+  .q-pts { color: #666; font-size: 0.75em; white-space: nowrap; }
+  .q-body img, .otext img { max-width: 100%; max-height: 60mm; }
+  .q-body p, .otext p { margin: 0; }
+
+  .opts { display: grid; gap: {{ D.row_gap }}mm {{ D.col_gap }}mm; margin: {{ D.opts_top }}mm 0 0 {{ indent }}mm; }
+  .opt { display: flex; gap: {{ text_gap }}mm; align-items: flex-start; break-inside: avoid; min-width: 0; }
+  .cb {
+    flex: none; width: {{ box }}mm; height: {{ box }}mm; box-sizing: border-box;
+    border: {{ 0.35 if large else 0.3 }}mm solid #222; border-radius: 0.5mm; background: #fff;
+    margin-top: {{ box_pad }}mm;
+  }
+  .otext { padding-top: {{ text_pad }}mm; line-height: {{ line_height }}; }
+  code, pre { font-family: "DejaVu Sans Mono", monospace; font-size: 0.85em; background: #f2f2f2; padding: 0 1mm; }
+  pre { padding: 2mm; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+{% for c in range(copies) %}
+<section class="copy">
+  <div class="help">
+    <img src="{{ check_svg }}" alt="">
+    {% if large %}<span><b>Coche</b> la case de ta ou tes réponses</span>{% else %}<span><b>Cochez</b> ou noircissez la case de chaque bonne réponse</span>{% endif %}
+    <span class="sep"></span>
+    <img src="{{ circle_svg }}" alt="">
+    {% if large %}<span><b>N'entoure pas</b></span>{% else %}<span><b>N'entourez pas</b></span>{% endif %}
+    {% if exam.subtitle %}<span class="subtitle">{{ exam.subtitle }}</span>{% endif %}
+  </div>
+  {% if exam.instructions %}<div class="instructions">{{ exam.instructions|clean|safe }}</div>{% endif %}
+
+  {% for q in exam.questions %}
+  {% set qi = loop.index0 %}
+  <div class="q">
+    <div class="q-head">
+      <div class="q-num">{{ loop.index }}.</div>
+      <div class="q-body">{{ q.html|clean|safe }}</div>
+      <div class="q-pts">{{ '%g'|format(q.points) }} pt{{ 's' if q.points > 1 else '' }}</div>
+    </div>
+    <div class="opts" style="grid-template-columns: repeat({{ cols[qi] }}, 1fr)">
+      {% for o in q.options %}
+      <div class="opt"><span class="cb" data-c="{{ c }}" data-q="{{ qi }}" data-o="{{ loop.index0 }}"></span><div class="otext">{{ o.html|clean|safe }}</div></div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+</body>
+</html>

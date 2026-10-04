@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>QCM Studio</title>
+  <meta name="description" content="Créer des QCM imprimables et les corriger au smartphone">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/">
+      <img src="/icons/icon.svg" alt="" width="28" height="28">
+      <span>QCM Studio</span>
+    </a>
+    <nav class="tabs" id="tabs">
+      <a href="#/" data-tab="exams">Mes QCM</a>
+      <a href="#/scan" data-tab="scan">Corriger</a>
+      <a href="#/results" data-tab="results">Résultats</a>
+      <a href="#/settings" data-tab="settings">Réglages</a>
+    </nav>
+  </header>
+  <main id="view" tabindex="-1"></main>
+  <div id="toasts" aria-live="polite"></div>
+</body>
+</html>

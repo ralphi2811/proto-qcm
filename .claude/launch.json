@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "qcm", "runtimeExecutable": "uv", "runtimeArgs": ["run", "uvicorn", "app.main:app", "--reload", "--reload-include", ".env", "--port", "8000"], "port": 8000 }
+  ]
+}
