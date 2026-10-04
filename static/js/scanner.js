@@ -2,6 +2,7 @@ import * as store from './store.js';
 import { decryptQr, keyFromExam } from './crypto.js';
 import { grade } from './grading.js';
 import { h, icon, toast, api, ask, setChildren } from './ui.js';
+import { cameraSupported, openScanCamera } from './camera.js';
 
 const L = (o) => String.fromCharCode(65 + o);
 
@@ -219,12 +220,26 @@ export function renderScanner(view) {
   const camera = h('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true, onchange: (e) => { enqueue([...e.target.files]); e.target.value = ''; } });
   const gallery = h('input', { type: 'file', accept: 'image/*,application/pdf,.pdf', multiple: true, hidden: true, onchange: (e) => { enqueue([...e.target.files]); e.target.value = ''; } });
 
+  /** Mode scan dans l'application ; à défaut (pas de HTTPS, caméra refusée), appareil photo du téléphone. */
+  let shot = 0;
+  async function startScan() {
+    if (!cameraSupported()) { camera.click(); return; }
+    try {
+      await openScanCamera({ onCapture: (blob) => enqueue([new File([blob], `scan-${++shot}.jpg`, { type: 'image/jpeg' })]) });
+    } catch (e) {
+      toast(e.name === 'NotAllowedError'
+        ? 'Accès à la caméra refusé : autorisez-le dans le navigateur, ou utilisez « Appareil photo du téléphone ».'
+        : `Caméra indisponible (${e.message}) : utilisez « Appareil photo du téléphone ».`, 'error', 7000);
+    }
+  }
+
   view.replaceChildren(
     h('section', { class: 'page' },
       h('div', { class: 'page-head' }, h('h1', {}, 'Corriger')),
       h('div', { class: 'card scan-start' },
-        h('button', { class: 'btn primary big', onclick: () => camera.click() }, icon('camera'), 'Photographier une page'),
+        h('button', { class: 'btn primary big', onclick: startScan }, icon('camera'), 'Scanner une page'),
         h('button', { class: 'btn', onclick: () => gallery.click() }, icon('image'), 'Importer photos ou PDF'),
+        cameraSupported() ? h('button', { class: 'btn ghost small', onclick: () => camera.click() }, 'Appareil photo du téléphone') : null,
         h('p', { class: 'muted small' },
           'Une photo par page, les 4 carrés noirs visibles, à plat, sans reflet. Un PDF issu du scanner (toutes les copies à la suite) est aussi accepté. Les pages d\'une même copie sont regroupées automatiquement ',
           '(sujet non numéroté : photographiez les pages dans l\'ordre, page 1 en premier). Touchez une case pour corriger la lecture.'),

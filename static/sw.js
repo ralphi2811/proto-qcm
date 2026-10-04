@@ -1,10 +1,10 @@
 // Service worker : met en cache l'interface (utilisable hors-ligne pour éditer / consulter).
 // Les appels /api/* (PDF, OMR) nécessitent le serveur.
-const CACHE = 'qcm-v13';
+const CACHE = 'qcm-v14';
 const SHELL = [
   '/', '/index.html', '/manifest.webmanifest', '/css/app.css',
   '/js/app.js', '/js/ui.js', '/js/store.js', '/js/crypto.js', '/js/base45.js', '/js/grading.js',
-  '/js/editor.js', '/js/ai.js', '/js/scanner.js', '/js/results.js', '/js/settings.js',
+  '/js/editor.js', '/js/ai.js', '/js/scanner.js', '/js/results.js', '/js/settings.js', '/js/camera.js', '/js/markers.js',
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png',
 ];
 
