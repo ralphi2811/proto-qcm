@@ -76,7 +76,8 @@ docker compose pull && docker compose up -d
 - *Par le serveur (sans SSH entrant, adapté au tunnel)* : une tâche cron
   `*/10 * * * * cd /srv/qcm && docker compose pull -q app && docker compose up -d`.
 
-Construction locale : `docker compose up -d --build` (utilise le `Dockerfile`).
+Construction locale : `docker build -t ghcr.io/ralphi2811/proto-qcm:latest .` puis
+`docker compose up -d --pull never`.
 
 ## Fonctionnement
 

@@ -7,8 +7,9 @@
 
 services:
   app:
+    # image publiée par la CI (pas de construction sur le serveur)
     image: ghcr.io/ralphi2811/proto-qcm:${QCM_TAG:-latest}
-    build: .
+    pull_policy: always
     restart: unless-stopped
     environment:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
