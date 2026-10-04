@@ -344,3 +344,17 @@ input:focus, select:focus, .rich:focus { outline: 2px solid color-mix(in srgb, v
 .segmented .seg-sub { font-size: .78rem; font-weight: 500; color: var(--muted); }
 .segmented button.on .seg-sub { color: var(--primary); }
 @media (max-width: 480px) { .segmented { display: flex; } .segmented button { flex: 1; min-width: 0; padding: 7px 6px; } }
+
+/* listes de classe */
+.roster-list { display: flex; flex-direction: column; margin: 4px 0 10px; }
+.roster-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.roster-row:last-child { border-bottom: 0; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.stack textarea { width: 100%; }
+.ident-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ident-status .tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: rgba(127, 127, 127, .14); color: var(--muted); }
+.ident-status .tag.ok { background: var(--ok-soft); color: var(--ok); }
+.ident-status .tag.warn { background: var(--warn-soft); color: var(--warn); }
+.ident-status .tag.error { background: var(--danger-soft); color: var(--danger); }
+.scan-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; align-items: end; }
+.spinner.small { width: 11px; height: 11px; border-width: 2px; display: inline-block; vertical-align: -1px; }

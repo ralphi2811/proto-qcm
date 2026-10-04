@@ -98,16 +98,21 @@ def ai_status():
     return {"enabled": cfg.enabled, "model": cfg.model if cfg.enabled else None, "needs_code": bool(cfg.access_code)}
 
 
+def _ai_config(code: str | None) -> ai.Config:
+    cfg = ai.config()
+    # code d'accès facultatif : protège les crédits OpenRouter si le serveur est exposé
+    if cfg.access_code and not hmac.compare_digest((code or "").encode(), cfg.access_code.encode()):
+        raise HTTPException(403, "Code d'accès IA incorrect")
+    return cfg
+
+
 @app.post("/api/ai/generate")
 async def ai_generate(
     options: str = Form(...),
     files: list[UploadFile] = File(default=[]),
     x_ai_code: str | None = Header(default=None),
 ):
-    cfg = ai.config()
-    # code d'accès facultatif : protège les crédits OpenRouter si le serveur est exposé
-    if cfg.access_code and not hmac.compare_digest((x_ai_code or "").encode(), cfg.access_code.encode()):
-        raise HTTPException(403, "Code d'accès IA incorrect")
+    cfg = _ai_config(x_ai_code)
     try:
         opts = ai.GenOptions.model_validate_json(options)
     except ValueError as e:
@@ -123,6 +128,20 @@ async def ai_generate(
     except ai.AiError as e:
         raise HTTPException(422, str(e)) from e
     except Exception as e:  # réseau, timeout…
+        raise HTTPException(502, f"Échec de l'appel à l'IA : {e.__class__.__name__}") from e
+
+
+@app.post("/api/ai/read-names")
+async def ai_read_names(req: ai.NamesIn, x_ai_code: str | None = Header(default=None)):
+    """Lecture du cartouche manuscrit (Nom, Prénom, Classe), rapprochée de la liste de classe."""
+    cfg = _ai_config(x_ai_code)
+    if any(len(v) > 400_000 for v in req.fields.values()):
+        raise HTTPException(413, "Recadrage trop lourd")
+    try:
+        return await ai.read_names(req, cfg)
+    except ai.AiError as e:
+        raise HTTPException(422, str(e)) from e
+    except Exception as e:
         raise HTTPException(502, f"Échec de l'appel à l'IA : {e.__class__.__name__}") from e
 
 

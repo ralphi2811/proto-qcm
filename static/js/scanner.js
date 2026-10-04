@@ -1,9 +1,27 @@
 import * as store from './store.js';
 import { decryptQr, keyFromExam } from './crypto.js';
 import { grade } from './grading.js';
-import { h, icon, toast, api, ask } from './ui.js';
+import { h, icon, toast, api, ask, setChildren } from './ui.js';
 
 const L = (o) => String.fromCharCode(65 + o);
+
+// préférences de correction (liste de classe, lecture IA) ; le code d'accès IA est partagé avec ai.js
+const loadPref = (k) => { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch { return {}; } };
+const savePref = (k, p) => { try { localStorage.setItem(k, JSON.stringify({ ...loadPref(k), ...p })); } catch {} };
+const SCAN_PREFS = 'qcm.scan';
+const AI_PREFS = 'qcm.ai';
+const norm = (s) => (s || '').normalize('NFD').replace(/\p{M}/gu, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+
+/** Limite le nombre d'appels simultanés (PDF de 30 copies : pas 30 requêtes d'un coup). */
+function limiter(n) {
+  let active = 0;
+  const waiting = [];
+  const next = () => { if (active < n && waiting.length) { active++; waiting.shift()(); } };
+  return (fn) => new Promise((resolve, reject) => {
+    waiting.push(() => fn().then(resolve, reject).finally(() => { active--; next(); }));
+    next();
+  });
+}
 
 async function downscale(file, max = 2400) {
   const bmp = await createImageBitmap(file); // applique l'orientation EXIF
@@ -22,6 +40,64 @@ export function renderScanner(view) {
   const queue = h('div', { class: 'scan-results' });
   const busy = h('div', { class: 'busy', hidden: true }, h('span', { class: 'spinner' }), h('span', { class: 'busy-text' }));
   const copies = []; // copies en cours d'assemblage (non enregistrées)
+
+  // ---- listes de classe et lecture des noms par l'IA
+  const prefs = loadPref(SCAN_PREFS);
+  const rosterNames = Object.keys(store.rosters());
+  const rosterSel = h('select', { onchange: () => savePref(SCAN_PREFS, { roster: rosterSel.value }) },
+    h('option', { value: '' }, 'Aucune'),
+    rosterNames.map((n) => h('option', { value: n, selected: n === prefs.roster }, n)),
+  );
+  const readNames = h('input', { type: 'checkbox', checked: prefs.readNames !== false, onchange: () => savePref(SCAN_PREFS, { readNames: readNames.checked }) });
+  const codeInput = h('input', {
+    type: 'password', autocomplete: 'off', placeholder: "Code d'accès IA", value: loadPref(AI_PREFS).code || '',
+    onchange: () => savePref(AI_PREFS, { code: codeInput.value }),
+  });
+  const aiBox = h('div', { class: 'scan-options' });
+  let aiStatus = null;
+  api('/api/ai/status').then((r) => r.json()).then((st) => {
+    aiStatus = st;
+    setChildren(aiBox,
+      h('label', { class: 'field' }, h('span', {}, 'Liste de classe'), rosterSel),
+      st.enabled
+        ? h('label', { class: 'check' }, readNames, 'Lire les noms avec l\'IA')
+        : h('p', { class: 'muted small' }, 'Lecture des noms indisponible (IA non configurée sur le serveur).'),
+      st.enabled && st.needs_code ? h('label', { class: 'field' }, h('span', {}, 'Code d\'accès IA'), codeInput) : null,
+      rosterNames.length ? null : h('p', { class: 'muted small' }, 'Astuce : créez une liste de classe dans les Réglages pour fiabiliser la lecture des noms.'),
+    );
+  }).catch(() => setChildren(aiBox, h('label', { class: 'field' }, h('span', {}, 'Liste de classe'), rosterSel)));
+
+  const limit = limiter(3);
+  const ctx = {
+    roster: () => (rosterSel.value ? { name: rosterSel.value, students: store.getRoster(rosterSel.value) ?? [] } : null),
+    canRead: () => !!(aiStatus?.enabled && readNames.checked),
+    /** Lit le cartouche ; renvoie { nom, prenom, classe, student?, confidence }. */
+    read: (fields, roster) => limit(async () => {
+      const body = {
+        fields: Object.fromEntries(Object.entries(fields).map(([k, f]) => [k, f.jpeg])),
+        roster: roster ? roster.students.map(store.studentLabel) : [],
+      };
+      const code = codeInput.value;
+      const res = await (await api('/api/ai/read-names', {
+        method: 'POST', body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', ...(code ? { 'X-AI-Code': code } : {}) },
+      })).json();
+      return { ...res, student: roster && res.roster_index >= 0 ? roster.students[res.roster_index] : null };
+    }),
+    /** Une identité a changé : les autres copies revoient leur alerte de doublon. */
+    identChanged: (copy) => copies.forEach((c) => { if (c !== copy && !c.saved && !c.discarded) c.renderIdentStatus(false); }),
+    /** Même élève déjà enregistré pour ce QCM, ou dans une autre copie ouverte ? */
+    duplicate: (copy) => {
+      const who = norm(`${copy.ident.nom?.value} ${copy.ident.prenom?.value}`);
+      if (!who) return null;
+      const ids = new Set([copy.examId, ...(copy.localExam?.qrIds || [])]);
+      const saved = store.listResults().find((r) => ids.has(r.examId) && norm(`${r.nom} ${r.prenom}`) === who);
+      if (saved) return `déjà corrigé (${saved.note ?? saved.total}/${saved.noteSur ?? ''})`;
+      const other = copies.find((c) => c !== copy && !c.saved && !c.discarded && c.examId === copy.examId
+        && norm(`${c.ident.nom?.value} ${c.ident.prenom?.value}`) === who);
+      return other ? 'même nom sur une autre copie en cours' : null;
+    },
+  };
 
   let pending = Promise.resolve();
   const enqueue = (files) => {
@@ -105,7 +181,7 @@ export function renderScanner(view) {
       copy = open.filter((c) => c.copyNo === 0 && !c.pages.has(p.page)).at(-1) ?? null;
     }
     if (!copy) {
-      copy = new Copy({ key, localExam, source, copyNo: p?.copy ?? 0, nPages: p?.n_pages ?? 1, onClose: (c) => c.card.remove() });
+      copy = new Copy({ key, localExam, source, ctx, copyNo: p?.copy ?? 0, nPages: p?.n_pages ?? 1, onClose: (c) => c.card.remove() });
       copies.push(copy);
     }
     copy.addPage(p?.page ?? 1, scan);
@@ -124,6 +200,7 @@ export function renderScanner(view) {
         h('p', { class: 'muted small' },
           'Une photo par page, les 4 carrés noirs visibles, à plat, sans reflet. Un PDF issu du scanner (toutes les copies à la suite) est aussi accepté. Les pages d\'une même copie sont regroupées automatiquement ',
           '(sujet non numéroté : photographiez les pages dans l\'ordre, page 1 en premier). Touchez une case pour corriger la lecture.'),
+        aiBox,
         h('label', { class: 'field' }, h('span', {}, 'Grille séparée au QR illisible : corriger avec'), fallbackSel),
         camera, gallery,
       ),
@@ -156,8 +233,8 @@ async function* ndjson(res) {
 // --------------------------------------------------------------------- copie
 
 class Copy {
-  constructor({ key, localExam, source, copyNo, nPages, onClose }) {
-    Object.assign(this, { key, localExam, source, copyNo, nPages, onClose });
+  constructor({ key, localExam, source, ctx, copyNo, nPages, onClose }) {
+    Object.assign(this, { key, localExam, source, ctx, copyNo, nPages, onClose });
     this.examId = key.examId;
     this.title = localExam?.title || `QCM ${key.examId ?? ''}`;
     this.pages = new Map(); // n° de page -> { scan, canvas, img }
@@ -175,6 +252,8 @@ class Copy {
     this.pagesBox = h('div', { class: 'pages-status' });
     this.alerts = h('div');
     this.identBox = h('div', { class: 'ident' });
+    this.identStatus = h('div', { class: 'ident-status' });
+    this.touched = new Set(); // champs saisis à la main : jamais écrasés par la lecture IA
     this.canvases = h('div', { class: 'canvases' });
     this.card = h('article', { class: 'card result-card' },
       h('div', { class: 'result-head' },
@@ -187,6 +266,7 @@ class Copy {
       this.pagesBox,
       this.alerts,
       this.identBox,
+      this.identStatus,
       h('div', { class: 'legend small' },
         h('span', { class: 'lg ok' }, 'juste'), h('span', { class: 'lg ko' }, 'fausse'),
         h('span', { class: 'lg miss' }, 'oubliée'), h('span', { class: 'lg unsure' }, 'douteuse / entourée')),
@@ -226,16 +306,88 @@ class Copy {
   }
 
   renderIdent(fields) {
-    // l'écriture de l'élève (recadrée par le serveur) au-dessus de chaque champ ; un OCR
-    // pourra pré-remplir ces champs plus tard
+    // l'écriture de l'élève (recadrée par le serveur) à côté de chaque champ
+    const roster = this.ctx.roster();
+    const list = roster ? h('datalist', { id: `roster-${Math.random().toString(36).slice(2)}` },
+      roster.students.map((st) => h('option', { value: store.studentLabel(st) }))) : null;
     this.identBox.replaceChildren(...Object.entries(fields).map(([k, f]) => {
-      const input = this.ident[k] ?? h('input', { placeholder: f.label, 'aria-label': f.label, autocapitalize: 'characters' });
-      this.ident[k] = input;
+      let input = this.ident[k];
+      if (!input) {
+        input = h('input', { placeholder: f.label, 'aria-label': f.label, autocapitalize: 'characters' });
+        input.addEventListener('input', () => { this.touched.add(k); this.onIdentInput(k); });
+        this.ident[k] = input;
+      }
+      if (k === 'nom' && list) input.setAttribute('list', list.id);
       return h('label', { class: 'ident-row' },
         h('span', { class: 'ident-label muted small' }, f.label),
         h('img', { class: 'handwriting', src: `data:image/jpeg;base64,${f.jpeg}`, alt: `${f.label} manuscrit` }),
         input);
-    }));
+    }), ...(list ? [list] : []));
+    if (this.ctx.canRead() && !this.readStarted) {
+      this.readStarted = true;
+      this.readIdent(fields, roster);
+    }
+    this.renderIdentStatus();
+  }
+
+  /** Choix d'un élève dans la liste (saisie au clavier du champ Nom) : remplit les trois champs. */
+  onIdentInput(k) {
+    const roster = this.ctx.roster();
+    if (k === 'nom' && roster) {
+      const st = roster.students.find((s) => store.studentLabel(s) === this.ident.nom.value);
+      if (st) this.setStudent(st, roster);
+    }
+    this.renderIdentStatus();
+  }
+
+  setStudent(st, roster) {
+    const set = (k, v) => { if (this.ident[k]) this.ident[k].value = v; };
+    set('nom', st.nom);
+    set('prenom', st.prenom);
+    if (roster && (!this.ident.classe?.value || !this.touched.has('classe'))) set('classe', roster.name);
+    this.match = { student: st, confidence: 'high' };
+  }
+
+  async readIdent(fields, roster) {
+    this.reading = true;
+    this.renderIdentStatus();
+    try {
+      const r = await this.ctx.read(fields, roster);
+      const fill = (k, v) => { if (this.ident[k] && !this.touched.has(k) && v) this.ident[k].value = v; };
+      if (r.student && !this.touched.has('nom') && !this.touched.has('prenom')) {
+        this.setStudent(r.student, roster);
+        this.match = { student: r.student, confidence: r.confidence };
+      } else {
+        fill('nom', r.nom.toUpperCase());
+        fill('prenom', r.prenom);
+        fill('classe', r.classe);
+        this.match = { student: null, confidence: r.confidence, roster: !!roster };
+      }
+      this.readError = null;
+    } catch (e) {
+      this.readError = e.message;
+    } finally {
+      this.reading = false;
+      this.renderIdentStatus();
+    }
+  }
+
+  renderIdentStatus(propagate = true) {
+    const tags = [];
+    const m = this.match;
+    if (this.reading) tags.push(h('span', { class: 'tag' }, h('span', { class: 'spinner small' }), ' Lecture du nom…'));
+    else if (this.readError) tags.push(h('span', { class: 'tag error', title: this.readError }, `Lecture du nom impossible : ${this.readError}`));
+    else if (m?.student && !this.touched.size) {
+      tags.push(m.confidence === 'high'
+        ? h('span', { class: 'tag ok' }, '✓ Élève de la liste')
+        : h('span', { class: 'tag warn' }, 'Élève de la liste probable : à vérifier'));
+    } else if (m && !this.touched.size) {
+      tags.push(h('span', { class: 'tag warn' }, m.roster ? 'Nom absent de la liste : à vérifier' : 'Lu par l\'IA : à vérifier'));
+    }
+    const dup = this.ctx.duplicate(this);
+    if (dup) tags.push(h('span', { class: 'tag error' }, `⚠ ${dup}`));
+    setChildren(this.identStatus, tags);
+    if (propagate) this.ctx.identChanged(this);
   }
 
   identity() {
@@ -347,5 +499,6 @@ class Copy {
     toast(`Enregistré : ${who} — ${r.note ?? r.total}`, 'ok');
     this.saved = true;
     this.onClose(this);
+    this.ctx.identChanged(this);
   }
 }

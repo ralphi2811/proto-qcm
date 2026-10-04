@@ -1,6 +1,6 @@
 import * as store from './store.js';
 import { formatKey, parseKey, newKeyHex } from './crypto.js';
-import { h, icon, toast, download, api, ask } from './ui.js';
+import { h, icon, toast, download, api, ask, modal, confirmDanger } from './ui.js';
 
 export async function handleKeyImport(arg) {
   history.replaceState(null, '', '#/settings'); // retire la clé de l'URL
@@ -20,6 +20,48 @@ export async function handleKeyImport(arg) {
   store.setCurrentKey(k);
   toast('Clé importée', 'ok');
   window.dispatchEvent(new HashChangeEvent('hashchange'));
+}
+
+/** Création / modification d'une liste de classe. */
+function editRoster(name, onDone) {
+  const students = name ? store.getRoster(name) ?? [] : [];
+  const nameInput = h('input', { value: name || '', placeholder: 'CM2 A' });
+  const text = h('textarea', {
+    rows: 12, class: 'mono',
+    placeholder: 'Un élève par ligne, par exemple :\nDUPONT Léa\nMARTIN;Hugo\n(copier-coller depuis un tableur possible)',
+  });
+  text.value = students.map((s) => `${s.nom}\t${s.prenom}`).join('\n');
+  const preview = h('p', { class: 'muted small' });
+  const refresh = () => {
+    const list = store.parseRoster(text.value);
+    preview.textContent = list.length
+      ? `${list.length} élève${list.length > 1 ? 's' : ''} : ${list.slice(0, 4).map(store.studentLabel).join(', ')}${list.length > 4 ? '…' : ''}`
+      : 'Aucun élève.';
+  };
+  text.addEventListener('input', refresh);
+  refresh();
+  const dlg = modal(name ? 'Modifier la liste' : 'Nouvelle liste de classe', h('div', { class: 'stack' },
+    h('label', { class: 'field' }, h('span', {}, 'Nom de la liste (sert aussi de « Classe »)'), nameInput),
+    h('label', { class: 'field' }, h('span', {}, 'Élèves'), text),
+    preview,
+    h('div', { class: 'row end' },
+      h('button', { class: 'btn ghost', onclick: () => dlg.close() }, 'Annuler'),
+      h('button', {
+        class: 'btn primary',
+        onclick: () => {
+          const n = nameInput.value.trim();
+          const list = store.parseRoster(text.value);
+          if (!n) { toast('Donnez un nom à la liste', 'warn'); return; }
+          if (!list.length) { toast('Ajoutez au moins un élève', 'warn'); return; }
+          if (n !== name && store.getRoster(n)) { toast('Une liste porte déjà ce nom', 'warn'); return; }
+          store.saveRoster(n, list, name || n);
+          dlg.close();
+          onDone();
+        },
+      }, 'Enregistrer'),
+    ),
+  ));
+  (name ? text : nameInput).focus();
 }
 
 export function renderSettings(view) {
@@ -84,8 +126,29 @@ export function renderSettings(view) {
         store.allKeys().length > 1 ? h('p', { class: 'muted small' }, `${store.allKeys().length - 1} ancienne(s) clé(s) conservée(s) pour la lecture.`) : null,
       ),
       h('div', { class: 'card' },
+        h('h3', {}, 'Listes de classe'),
+        h('p', { class: 'muted' },
+          "À la correction, le nom écrit par l'élève est lu par l'IA puis rapproché de la liste choisie : ",
+          "les fautes et les écritures difficiles sont rattrapées."),
+        h('div', { class: 'roster-list' },
+          Object.entries(store.rosters()).map(([name, list]) => h('div', { class: 'roster-row' },
+            h('div', {}, h('strong', {}, name), h('span', { class: 'muted small' }, ` · ${list.length} élève${list.length > 1 ? 's' : ''}`)),
+            h('div', { class: 'row' },
+              h('button', { class: 'btn ghost icon-btn', title: 'Modifier', onclick: () => editRoster(name, () => renderSettings(view)) }, icon('edit')),
+              h('button', {
+                class: 'btn ghost icon-btn danger', title: 'Supprimer',
+                onclick: async () => {
+                  if (await confirmDanger(`Supprimer la liste « ${name} » ?`, 'Les résultats déjà enregistrés ne sont pas touchés.')) {
+                    store.deleteRoster(name); renderSettings(view);
+                  }
+                },
+              }, icon('trash')),
+            )))),
+        h('button', { class: 'btn', onclick: () => editRoster(null, () => renderSettings(view)) }, icon('plus'), 'Nouvelle liste'),
+      ),
+      h('div', { class: 'card' },
         h('h3', {}, 'Sauvegarde'),
-        h('p', { class: 'muted' }, 'Tout est stocké dans ce navigateur (aucune base de données). Exportez régulièrement : QCM, résultats et clés.'),
+        h('p', { class: 'muted' }, 'Tout est stocké dans ce navigateur (aucune base de données). Exportez régulièrement : QCM, résultats, listes de classe et clés.'),
         h('div', { class: 'row wrap' },
           h('button', {
             class: 'btn primary',

@@ -63,6 +63,12 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
 - Import PDF (scanner / imprimante multifonction) : `POST /api/scan-pdf` rend chaque page à
   200 dpi (pypdfium2) et renvoie un flux NDJSON (une ligne par page : `scan` ou `error`) ;
   le navigateur traite chaque page comme une photo (même regroupement en copies).
+- Lecture des noms : `POST /api/ai/read-names` (code d'accès IA) envoie les 3 recadrages du
+  cartouche + la liste de classe au modèle OpenRouter, qui renvoie le texte lu, `roster_index`
+  et une confiance. Listes de classe dans `qcm.rosters` (Réglages, incluses dans la sauvegarde).
+  À la correction : champs pré-remplis (jamais par-dessus une saisie manuelle), autocomplétion
+  sur la liste, alerte doublon (même élève déjà corrigé pour ce QCM ou dans une copie ouverte).
+  3 lectures simultanées au maximum (PDF de toute une classe).
 
 - **Densité** (2026-10-04) : `exam.density` = `large` / `normal` / `compact`
   (`subject.DENSITIES` : police + espacements), envoyée au rendu, n'affecte pas le QR.

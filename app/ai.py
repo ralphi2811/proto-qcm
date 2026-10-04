@@ -304,30 +304,8 @@ async def generate(opts: GenOptions, files: list[tuple[str, bytes]], cfg: Config
             "json_schema": {"name": "qcm", "strict": True, "schema": _schema()},
         },
     }
-    headers = {
-        "Authorization": f"Bearer {cfg.api_key}",
-        "X-Title": "QCM Studio",
-    }
-    url = f"{cfg.base_url}/chat/completions"
-    async with httpx.AsyncClient(timeout=httpx.Timeout(240, connect=15), transport=_TRANSPORT) as client:
-        res = await client.post(url, json=body, headers=headers)
-        if res.status_code == 400 and "response_format" in res.text:
-            # modèle sans sortie structurée : on retombe sur du JSON demandé dans le prompt
-            body.pop("response_format")
-            res = await client.post(url, json=body, headers=headers)
-    if res.status_code != 200:
-        raise AiError(_api_error(res))
-    data = res.json()
-    try:
-        msg = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        raise AiError(_api_error(res)) from None
-    if isinstance(msg, list):  # certains fournisseurs renvoient des blocs
-        msg = "".join(part.get("text", "") for part in msg if isinstance(part, dict))
-    try:
-        raw = json.loads(msg)
-    except (json.JSONDecodeError, TypeError):
-        raw = _extract_json(msg or "")
+    res = await _chat(cfg, body, timeout=240)
+    raw, data = res["raw"], res["data"]
     out, warnings = normalize(raw, opts)
     usage = data.get("usage") or {}
     return {
@@ -353,3 +331,109 @@ def _api_error(res: httpx.Response) -> str:
     }
     hint = hints.get(res.status_code)
     return f"OpenRouter {res.status_code}" + (f" ({hint})" if hint else "") + f" : {msg}"
+
+
+# ------------------------------------------------------------ lecture des noms
+
+MAX_ROSTER = 80
+NAME_FIELDS = ("nom", "prenom", "classe")
+
+NAMES_SYSTEM = """Tu lis l'écriture manuscrite d'élèves (souvent des enfants) dans le cartouche d'une copie.
+On te donne une image par champ : Nom, Prénom, Classe. Recopie ce qui est écrit, sans inventer.
+Champ vide ou illisible : chaîne vide.
+Si une liste de classe est fournie, indique dans roster_index le numéro (à partir de 0) de l'élève
+qui correspond à ce qui est écrit, en tolérant les fautes d'orthographe, les lettres mal formées,
+l'inversion nom/prénom ou un prénom seul s'il est unique dans la liste ; -1 si aucun ne correspond
+de façon convaincante. Ne choisis jamais un élève au hasard.
+confidence : "high" si la lecture (ou la correspondance) ne fait aucun doute, "medium" si probable,
+"low" sinon. Réponds uniquement en JSON."""
+
+
+class NamesIn(BaseModel):
+    fields: dict[str, str]  # champ -> JPEG en base64 (recadrage renvoyé par /api/scan)
+    roster: list[str] = Field(default_factory=list, max_length=MAX_ROSTER)
+
+
+def _names_schema() -> dict:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["nom", "prenom", "classe", "roster_index", "confidence"],
+        "properties": {
+            "nom": {"type": "string"},
+            "prenom": {"type": "string"},
+            "classe": {"type": "string"},
+            "roster_index": {"type": "integer"},
+            "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+        },
+    }
+
+
+def build_names_messages(req: NamesIn) -> list[dict]:
+    content: list[dict] = []
+    labels = {"nom": "Nom", "prenom": "Prénom", "classe": "Classe"}
+    for k in NAME_FIELDS:
+        jpeg = req.fields.get(k)
+        if not jpeg:
+            continue
+        content.append({"type": "text", "text": f"Champ « {labels[k]} » :"})
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{jpeg}"}})
+    if req.roster:
+        lst = "\n".join(f"{i}. {name.strip()}" for i, name in enumerate(req.roster))
+        content.append({"type": "text", "text": f"Liste de classe :\n{lst}"})
+    else:
+        content.append({"type": "text", "text": "Pas de liste de classe : roster_index = -1."})
+    return [{"role": "system", "content": NAMES_SYSTEM}, {"role": "user", "content": content}]
+
+
+async def _chat(cfg: Config, body: dict, timeout: float) -> dict:
+    """Appel OpenRouter ; renvoie {"raw": contenu JSON décodé, "data": réponse complète}."""
+    headers = {"Authorization": f"Bearer {cfg.api_key}", "X-Title": "QCM Studio"}
+    url = f"{cfg.base_url}/chat/completions"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=15), transport=_TRANSPORT) as client:
+        res = await client.post(url, json=body, headers=headers)
+        if res.status_code == 400 and "response_format" in res.text:
+            body = {k: v for k, v in body.items() if k != "response_format"}
+            res = await client.post(url, json=body, headers=headers)
+    if res.status_code != 200:
+        raise AiError(_api_error(res))
+    data = res.json()
+    try:
+        msg = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        raise AiError(_api_error(res)) from None
+    if isinstance(msg, list):
+        msg = "".join(part.get("text", "") for part in msg if isinstance(part, dict))
+    try:
+        raw = json.loads(msg)
+    except (json.JSONDecodeError, TypeError):
+        raw = _extract_json(msg or "")
+    return {"raw": raw, "data": data}
+
+
+async def read_names(req: NamesIn, cfg: Config | None = None) -> dict:
+    cfg = cfg or config()
+    if not cfg.enabled:
+        raise AiError("IA non configurée (OPENROUTER_API_KEY absente du .env)")
+    if not any(req.fields.get(k) for k in NAME_FIELDS):
+        raise AiError("Aucun cartouche à lire")
+    body = {
+        "model": cfg.model,
+        "messages": build_names_messages(req),
+        "temperature": 0,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "noms", "strict": True, "schema": _names_schema()},
+        },
+    }
+    out = (await _chat(cfg, body, timeout=60))["raw"]
+    if not isinstance(out, dict):
+        raise AiError("Réponse de l'IA illisible")
+    idx = out.get("roster_index")
+    idx = idx if isinstance(idx, int) and 0 <= idx < len(req.roster) else -1
+    conf = out.get("confidence") if out.get("confidence") in ("high", "medium", "low") else "low"
+    return {
+        **{k: str(out.get(k) or "").strip() for k in NAME_FIELDS},
+        "roster_index": idx,
+        "confidence": conf,
+    }

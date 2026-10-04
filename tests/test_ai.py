@@ -113,3 +113,39 @@ def test_endpoint_disabled(monkeypatch):
     assert client.get("/api/ai/status").json()["enabled"] is False
     r = client.post("/api/ai/generate", data={"options": json.dumps({"prompt": "x"})})
     assert r.status_code == 422
+
+
+ROSTER = ["DUPONT Léa", "MARTIN Hugo", "PAYET Noah"]
+
+
+async def test_read_names_with_roster(monkeypatch):
+    seen = []
+    answer = {"nom": "PAYE", "prenom": "Noa", "classe": "CM2", "roster_index": 2, "confidence": "medium"}
+    monkeypatch.setattr(ai, "_TRANSPORT", _fake_openrouter(answer, seen))
+    req = ai.NamesIn(fields={"nom": "AAAA", "prenom": "BBBB", "classe": ""}, roster=ROSTER)
+    res = await ai.read_names(req, CFG)
+    assert res == {"nom": "PAYE", "prenom": "Noa", "classe": "CM2", "roster_index": 2, "confidence": "medium"}
+    body = seen[0]
+    assert body["temperature"] == 0
+    user = body["messages"][1]["content"]
+    assert [p["type"] for p in user] == ["text", "image_url", "text", "image_url", "text"]  # classe vide : pas envoyée
+    assert "2. PAYET Noah" in user[-1]["text"]
+
+
+async def test_read_names_rejects_bad_index(monkeypatch):
+    answer = {"nom": "X", "prenom": "", "classe": "", "roster_index": 7, "confidence": "high"}
+    monkeypatch.setattr(ai, "_TRANSPORT", _fake_openrouter(answer, []))
+    res = await ai.read_names(ai.NamesIn(fields={"nom": "AAAA"}, roster=ROSTER), CFG)
+    assert res["roster_index"] == -1
+
+
+def test_read_names_endpoint_code(monkeypatch):
+    answer = {"nom": "DUPONT", "prenom": "Léa", "classe": "", "roster_index": 0, "confidence": "high"}
+    monkeypatch.setattr(ai, "_TRANSPORT", _fake_openrouter(answer, []))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test")
+    monkeypatch.setenv("AI_ACCESS_CODE", "secret")
+    client = TestClient(app)
+    body = {"fields": {"nom": "AAAA"}, "roster": ROSTER}
+    assert client.post("/api/ai/read-names", json=body).status_code == 403
+    r = client.post("/api/ai/read-names", json=body, headers={"X-AI-Code": "secret"})
+    assert r.status_code == 200 and r.json()["roster_index"] == 0

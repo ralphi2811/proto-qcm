@@ -3,7 +3,7 @@
 import { newKeyHex } from './crypto.js';
 import { notify } from './ui.js';
 
-const K = { exams: 'qcm.exams', results: 'qcm.results', settings: 'qcm.settings' };
+const K = { exams: 'qcm.exams', results: 'qcm.results', settings: 'qcm.settings', rosters: 'qcm.rosters' };
 
 function load(k, def) {
   try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; }
@@ -71,15 +71,55 @@ export function setCurrentKey(h) {
   save(K.settings, s);
 }
 
+// ---------------------------------------------------------------- listes de classe
+// { "CM2 A": [{ nom: "DUPONT", prenom: "Léa" }, …] }
+export function rosters() { return load(K.rosters, {}); }
+export function getRoster(name) { return rosters()[name] ?? null; }
+export function saveRoster(name, students, oldName = name) {
+  const all = rosters();
+  if (oldName !== name) delete all[oldName];
+  all[name] = students;
+  save(K.rosters, all);
+}
+export function deleteRoster(name) { const all = rosters(); delete all[name]; save(K.rosters, all); }
+
+/**
+ * Une ligne par élève, collée depuis un tableur ou tapée :
+ * "DUPONT;Léa", "DUPONT<tab>Léa", "DUPONT Léa" (nom en majuscules), "Léa DUPONT", ou "Dupont Léa"
+ * (sans majuscules : premier mot = nom).
+ */
+export function parseRoster(text) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    let nom, prenom;
+    const parts = line.split(/\s*[;\t,]\s*/).filter(Boolean);
+    if (parts.length >= 2) [nom, prenom] = parts;
+    else {
+      const words = line.split(/\s+/);
+      const upper = words.filter((w) => /\p{L}/u.test(w) && w === w.toUpperCase());
+      if (upper.length && upper.length < words.length) {
+        nom = upper.join(' ');
+        prenom = words.filter((w) => !upper.includes(w)).join(' ');
+      } else { [nom, ...prenom] = words; prenom = prenom.join(' '); }
+    }
+    out.push({ nom: nom.toUpperCase(), prenom: prenom || '' });
+  }
+  return out;
+}
+export const studentLabel = (s) => [s.nom, s.prenom].filter(Boolean).join(' ');
+
 // ---------------------------------------------------------------- sauvegarde
 export function exportAll() {
-  return { app: 'proto-qcm', version: 1, exams: load(K.exams, {}), results: listResults(), keys: allKeys() };
+  return { app: 'proto-qcm', version: 1, exams: load(K.exams, {}), results: listResults(), keys: allKeys(), rosters: rosters() };
 }
 export function importAll(data) {
   if (data?.app !== 'proto-qcm') throw new Error('Fichier non reconnu');
   save(K.exams, { ...load(K.exams, {}), ...data.exams });
   const ids = new Set(listResults().map((r) => r.id));
   save(K.results, [...listResults(), ...(data.results || []).filter((r) => !ids.has(r.id))]);
+  save(K.rosters, { ...rosters(), ...(data.rosters || {}) });
   const s = settings();
   s.keys = [...new Set([...s.keys, ...(data.keys || [])])];
   save(K.settings, s);

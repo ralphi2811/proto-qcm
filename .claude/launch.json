@@ -1,6 +1,42 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "qcm", "runtimeExecutable": "uv", "runtimeArgs": ["run", "uvicorn", "app.main:app", "--reload", "--reload-include", ".env", "--port", "8000"], "port": 8000 }
+    {
+      "name": "qcm",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "uvicorn",
+        "app.main:app",
+        "--reload",
+        "--reload-include",
+        ".env",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "qcm-lan",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "uvicorn",
+        "app.main:app",
+        "--reload",
+        "--reload-include",
+        ".env",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8443",
+        "--ssl-keyfile",
+        "certs/key.pem",
+        "--ssl-certfile",
+        "certs/cert.pem"
+      ],
+      "port": 8443,
+      "url": "https://localhost:8443"
+    }
   ]
 }
