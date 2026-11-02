@@ -200,17 +200,213 @@ def _qr_fits(corners: np.ndarray, qr: QrHit) -> bool:
     return True
 
 
-def _locate(gray: np.ndarray, qr: QrHit | None) -> np.ndarray:
-    """Coins orientés de la feuille : le plus grand quadrilatère de repères cohérent avec le QR."""
-    quads = _marker_quads(gray)
+CORNER_NAMES = ("haut gauche", "haut droit", "bas droit", "bas gauche")
+
+
+def _qr_error(corners: np.ndarray, qr: QrHit) -> float:
+    """Écart (mm) entre le centre du QR ramené sur la page et sa position théorique."""
+    mm = cv2.perspectiveTransform(np.array([[qr.center]], np.float32), _homography(corners))[0, 0]
+    return float(np.hypot(mm[0] - QR_CENTER_MM[0], mm[1] - QR_CENTER_MM[1]))
+
+
+def _rebuild_corner(gray: np.ndarray, qr: QrHit) -> list[tuple[np.ndarray, int]]:
+    """Repère manquant (masqué, taché, coupé, non reconnu) : avec 3 repères et les proportions
+    de la page, on calcule où est le 4e ; le QR valide la reconstitution.
+
+    Pour chaque triplet de candidats et chaque attribution aux coins, une transformation affine
+    (une page à plat se déforme peu : échelle, rotation, léger cisaillement) donne la position
+    du coin manquant. On ne garde que les transformations proches d'une similitude, sans
+    retournement, et cohérentes avec le QR ; s'il y a un carré sombre à l'endroit prévu, sa
+    position exacte remplace l'estimation."""
+    cands = sorted(_marker_candidates(gray), key=lambda t: -t[2])[:12]
+    if len(cands) < 3:
+        return []
+    dst_all = np.array(sheet.MARKERS, np.float32)
+    found: list[tuple[float, np.ndarray, int]] = []
+    for trio in itertools.combinations(cands, 3):
+        areas = [c[2] for c in trio]
+        if max(areas) / min(areas) > 3:
+            continue
+        pts = np.array([(c[0], c[1]) for c in trio], np.float32)
+        for missing in range(4):
+            idx = [i for i in range(4) if i != missing]
+            for perm in itertools.permutations(range(3)):
+                src = pts[list(perm)]
+                A = cv2.getAffineTransform(dst_all[idx], src)  # page (mm) -> image
+                M = A[:, :2]
+                if np.linalg.det(M) <= 0:  # retournement
+                    continue
+                sx, sy = np.linalg.norm(M[:, 0]), np.linalg.norm(M[:, 1])
+                if not 0.8 < sx / sy < 1.25:
+                    continue
+                cos = abs(float(M[:, 0] @ M[:, 1])) / (sx * sy)
+                if cos > 0.15:  # cisaillement
+                    continue
+                # taille des repères cohérente avec l'échelle
+                side = np.sqrt(np.mean(areas))
+                if not 0.5 < side / (sheet.MARKER_SIZE * (sx + sy) / 2) < 1.6:
+                    continue
+                guess = A @ np.array([*dst_all[missing], 1.0], np.float32)
+                near = [c for c in cands if np.hypot(c[0] - guess[0], c[1] - guess[1]) < sheet.MARKER_SIZE * sx / 2]
+                if near:
+                    guess = np.array(near[0][:2], np.float32)
+                corners = np.zeros((4, 2), np.float32)
+                corners[idx] = src
+                corners[missing] = guess
+                if _qr_fits(corners, qr):
+                    found.append((_qr_error(corners, qr), corners, missing))
+    found.sort(key=lambda t: t[0])
+    return [(c, m) for _, c, m in found[:8]]
+
+
+BOX_FIT_MM = 1.0  # décalage médian toléré des cadres de cases après redressement
+
+
+def _box_fit(gray: np.ndarray, corners: np.ndarray, boxes: dict, strict: bool = False):
+    """Cherche le cadre de chaque case autour de sa place prévue sur la page redressée.
+    Renvoie (décalage médian en mm — 9e décile si `strict` —, part des cadres trouvés,
+    points trouvés, points prévus)."""
+    s = PX_PER_MM
+    reader = _BoxReader(_ink_mask(_warp(gray, corners)))
+    src, dst, offs = [], [], []
+    for b in boxes.values():
+        r = reader.read(b, search_mm=3.5)
+        if r["frame"] < 0.3:
+            continue
+        x, y, w, h = r["rect"]
+        src.append(((x + w / 2) * s, (y + h / 2) * s))
+        dst.append(((b.x + b.w / 2) * s, (b.y + b.h / 2) * s))
+        offs.append(np.hypot(x - b.x, y - b.y))
+    med = float(np.percentile(offs, 90 if strict else 50)) if offs else float("inf")
+    return med, len(offs) / max(len(boxes), 1), src, dst
+
+
+FIXED_TOL_MM = 1.5  # déplacement maximal d'un repère mesuré lors du recalage
+
+
+def _refine(corners: np.ndarray, src: list, dst: list, fixed: list[int]) -> np.ndarray | None:
+    """Homographie de correction (RANSAC) ajustée sur les cadres de cases retrouvés.
+
+    Les repères réellement mesurés (`fixed`) servent d'ancres : sans eux, la grille régulière
+    des cases laisse place à une solution décalée d'une ligne entière qui « colle » aussi bien."""
+    if len(src) < 8:
+        return None
+    s = PX_PER_MM
+    anchors = [tuple(np.array(sheet.MARKERS[i], np.float32) * s) for i in fixed]
+    src_all = np.float32(src + anchors * 10)
+    dst_all = np.float32(dst + anchors * 10)
+    Hc, inliers = cv2.findHomography(src_all, dst_all, cv2.RANSAC, 0.6 * s)
+    if Hc is None or inliers[: len(src)].sum() < max(8, 0.6 * len(src)):
+        return None
+    marks = np.array([sheet.MARKERS], np.float32) * s
+    moved = cv2.perspectiveTransform(marks, Hc)[0] - marks[0]  # déplacement de chaque repère
+    if any(np.hypot(*moved[i]) > FIXED_TOL_MM * s for i in fixed):
+        return None
+    H0 = cv2.getPerspectiveTransform(corners.astype(np.float32), marks[0])
+    return cv2.perspectiveTransform(marks, np.linalg.inv(Hc @ H0))[0]
+
+
+REBUILT_FIT_MM = 0.8  # repère reconstitué : 90 % des cadres à moins de 0,8 mm
+
+
+def _validate(gray: np.ndarray, corners: np.ndarray, boxes: dict | None, fixed: list[int]) -> np.ndarray | None:
+    """Les cases tombent-elles à leur place ? Sinon, recalage sur leurs cadres (2 passes).
+
+    Repère reconstitué (3 repères fixes) : recalage systématique et critère strict, une
+    erreur locale ne devant pas se cacher derrière une médiane correcte."""
+    if not boxes:
+        return corners
+    rebuilt = len(fixed) < 4
+    med, frac, src, dst = _box_fit(gray, corners, boxes, strict=rebuilt)
+    if not rebuilt and med <= BOX_FIT_MM and frac >= 0.5:
+        return corners
+    for _ in range(2):
+        refined = _refine(corners, src, dst, fixed)
+        if refined is None:
+            return None
+        corners = refined
+        med, frac, src, dst = _box_fit(gray, corners, boxes, strict=rebuilt)
+        if rebuilt and med <= REBUILT_FIT_MM and frac >= 0.8:
+            return corners
+        if not rebuilt and med <= BOX_FIT_MM / 2 and frac >= 0.5:
+            return corners
+    return None
+
+
+def _frame_points(boxes: dict, per_edge: int = 4) -> np.ndarray:
+    """Points (mm, homogènes) répartis sur les côtés des cadres de cases."""
+    t = (np.arange(per_edge) + 0.5) / per_edge
+    pts = []
+    for b in boxes.values():
+        for u in t:
+            pts += [(b.x + u * b.w, b.y), (b.x + u * b.w, b.y + b.h), (b.x, b.y + u * b.h), (b.x + b.w, b.y + u * b.h)]
+    p = np.array(pts, np.float64)
+    return np.hstack([p, np.ones((len(p), 1))])
+
+
+def _search_missing(gray: np.ndarray, corners: np.ndarray, missing: int, boxes: dict) -> np.ndarray:
+    """Position du repère manquant qui aligne le mieux tous les cadres de cases sur l'encre.
+
+    Les 3 repères mesurés étant fixes, seule la position du 4e reste inconnue (2 degrés de
+    liberté) : on l'explore autour de l'estimation, du grossier au fin. Toute la grille doit
+    coïncider à la fois, ce qui lève l'ambiguïté d'un décalage d'une ligne de cases."""
+    ink = cv2.adaptiveThreshold(cv2.GaussianBlur(gray, (3, 3), 0), 1, cv2.ADAPTIVE_THRESH_MEAN_C,
+                                cv2.THRESH_BINARY_INV, int(max(gray.shape) / 25) | 1, 10)
+    ink = cv2.dilate(ink, np.ones((3, 3), np.uint8))
+    h, w = ink.shape
+    pts = _frame_points(boxes)
+    dst = np.array(sheet.MARKERS, np.float32)
+    px_mm = np.linalg.norm(corners[1] - corners[0]) / (dst[1][0] - dst[0][0])  # échelle approchée
+
+    def score(c):
+        H = cv2.getPerspectiveTransform(dst, c.astype(np.float32))
+        q = pts @ H.T
+        x = np.round(q[:, 0] / q[:, 2]).astype(int)
+        y = np.round(q[:, 1] / q[:, 2]).astype(int)
+        ok = (x >= 0) & (x < w) & (y >= 0) & (y < h)
+        return ink[y[ok], x[ok]].sum() / len(pts)
+
+    best = corners.astype(np.float32).copy()
+    for radius, step in ((12.0, 1.0), (1.5, 0.25)):
+        center = best[missing].copy()
+        top = (-1.0, center)
+        for dy in np.arange(-radius, radius + 1e-6, step):
+            for dx in np.arange(-radius, radius + 1e-6, step):
+                c = best.copy()
+                c[missing] = center + np.array([dx, dy], np.float32) * px_mm
+                sc = score(c)
+                if sc > top[0]:
+                    top = (sc, c[missing].copy())
+        best[missing] = top[1]
+    return best
+
+
+def _locate(gray: np.ndarray, qr: QrHit | None, boxes: dict | None) -> tuple[np.ndarray, str | None]:
+    """Coins orientés de la feuille (TL, TR, BR, BL) et, le cas échéant, une remarque.
+
+    Le plus grand quadrilatère de repères qui place le QR à sa place et les cases à la leur ;
+    à défaut, un repère manquant est reconstitué à partir des trois autres puis recalé sur
+    les cadres des cases."""
+    try:
+        quads = _marker_quads(gray)
+    except ScanError:
+        quads = []
     if qr is None:
-        return _orient(quads[0], None)
+        if not quads:
+            raise ScanError("Repères introuvables — cadrez toute la feuille, bien éclairée")
+        return _orient(quads[0], None), None
     for q in quads:
         corners = _orient(q, qr)
-        if _qr_fits(corners, qr):
-            return corners
-    raise ScanError("Repères de la feuille incohérents avec le QR code — un carré noir est masqué, "
-                    "coupé ou confondu avec une case noircie ; reprenez la photo ou le scan")
+        if _qr_fits(corners, qr) and (ok := _validate(gray, corners, boxes, [0, 1, 2, 3])) is not None:
+            return ok, None
+    for corners, missing in _rebuild_corner(gray, qr):
+        fixed = [i for i in range(4) if i != missing]
+        if boxes:
+            corners = _search_missing(gray, corners, missing, boxes)
+        if (ok := _validate(gray, corners, boxes, fixed)) is not None:
+            return ok, f"Repère {CORNER_NAMES[missing]} non reconnu : position déduite des trois autres"
+    raise ScanError("Repères de la feuille introuvables ou incohérents avec le QR code — un carré noir "
+                    "est masqué, coupé ou confondu avec une case noircie ; reprenez la photo ou le scan")
 
 
 def _cyclic(pts: np.ndarray) -> np.ndarray:
@@ -273,6 +469,8 @@ class _BoxReader:
         # pénalise légèrement les grands décalages à score égal
         score = border - 0.02 * (dx**2 + dy**2)
         k = int(np.argmax(score))
+        band = max((bw + 2) * (bh + 2) - (bw - 2 * bt) * (bh - 2 * bt), 1)
+        frame = float(border[k]) / band  # part d'encre dans la bande du cadre (cadre net ≈ 0,4+)
         bx, by = bx + int(dx[k]), by + int(dy[k])
 
         m = max(3, int(0.8 * s))  # intérieur : on exclut le cadre imprimé
@@ -284,6 +482,7 @@ class _BoxReader:
             "ratio": ink_px / area,
             "ink_mm2": ink_px / (s * s),
             "rect": [bx / s, by / s, box.w, box.h],
+            "frame": frame,
         }
 
 
@@ -403,10 +602,45 @@ def scan_pdf_page(data: bytes, index: int, fallback_params: dict | None = None) 
     return scan(np.asarray(img), fallback_params)
 
 
+def _geometry(qr_text: str | None, fallback_params: dict | None, warnings: list):
+    """(header, page, params, style, cases) d'après le QR, ou la géométrie fournie."""
+    header = page = None
+    if qr_text is not None:
+        try:
+            header, page = parse_qr(qr_text)
+        except PayloadError as e:
+            warnings.append(f"QR invalide : {e}")
+
+    if page is not None:  # page de sujet : positions des cases lues dans le QR
+        st = subject.subject_style(page.box)
+        h = page.box / 2
+        boxes = {(b.q, b.o): sheet.Box(b.cx - h, b.cy - h, page.box, page.box) for b in page.boxes}
+        return header, page, None, st, boxes
+    # grille séparée : géométrie calculée
+    if header is not None:
+        params = (header.n_questions, header.n_options, header.style)
+    elif fallback_params:
+        params = (
+            int(fallback_params["n_questions"]),
+            int(fallback_params["n_options"]),
+            int(fallback_params.get("style", sheet.STANDARD)),
+        )
+        warnings.append("QR non lu : géométrie fournie manuellement")
+    else:
+        return header, page, None, None, None
+    layout = sheet.compute_layout(*params)
+    boxes = {(q, o): b for q, row in enumerate(layout.question_boxes) for o, b in enumerate(row)}
+    return header, page, params, layout.style, boxes
+
+
 def scan(data: bytes | np.ndarray, fallback_params: dict | None = None, preview: bool = True) -> dict:
     gray = _load_gray(data)
     qr = _read_qr(gray)
-    corners = _locate(gray, qr)
+    warnings: list[str] = []
+    header, page, params, st, boxes = _geometry(qr.text if qr else None, fallback_params, warnings)
+    corners, locate_note = _locate(gray, qr, boxes if qr else None)
+    if locate_note:
+        warnings.insert(0, locate_note)
     warped = _warp(gray, corners)
 
     if qr is None:  # seconde chance sur l'image redressée (zone connue)
@@ -416,38 +650,13 @@ def scan(data: bytes | np.ndarray, fallback_params: dict | None = None, preview:
         hit = _read_qr(cv2.resize(crop, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC))
         if hit:
             qr = QrHit(hit.text, (0, 0))
-
-    header = page = None
-    warnings = []
-    if qr is not None:
-        try:
-            header, page = parse_qr(qr.text)
-        except PayloadError as e:
-            warnings.append(f"QR invalide : {e}")
-
-    if page is not None:  # page de sujet : positions des cases lues dans le QR
-        st = subject.subject_style(page.box)
-        h = page.box / 2
-        boxes = {(b.q, b.o): sheet.Box(b.cx - h, b.cy - h, page.box, page.box) for b in page.boxes}
-        params = None
-    else:  # grille séparée : géométrie calculée
-        if header is not None:
-            params = (header.n_questions, header.n_options, header.style)
-        elif fallback_params:
-            params = (
-                int(fallback_params["n_questions"]),
-                int(fallback_params["n_options"]),
-                int(fallback_params.get("style", sheet.STANDARD)),
-            )
-            warnings.append("QR non lu : géométrie fournie manuellement")
-        else:
-            raise ScanError(
-                "QR code illisible : rephotographiez la page (ou, pour une grille séparée, "
-                "choisissez le QCM manuellement)"
-            )
-        layout = sheet.compute_layout(*params)
-        st = layout.style
-        boxes = {(q, o): b for q, row in enumerate(layout.question_boxes) for o, b in enumerate(row)}
+            warnings.clear()
+            header, page, params, st, boxes = _geometry(qr.text, fallback_params, warnings)
+    if boxes is None:
+        raise ScanError(
+            "QR code illisible : rephotographiez la page (ou, pour une grille séparée, "
+            "choisissez le QCM manuellement)"
+        )
 
     ink = _ink_mask(warped)
     reader = _BoxReader(ink)

@@ -206,19 +206,35 @@ def test_header_roundtrip():
     assert (h.n_questions, h.n_options, h.style) == (N_Q, N_OPT, sheet.LARGE)
 
 
-@pytest.mark.parametrize("fake", [(12, 60), (40, 50), (100, 12)])
-def test_wrong_marker_quad_is_rejected(sheet_image, fake):
-    """Repère masqué + carré noir ailleurs : jamais de feuille redressée de travers (notes
-    fausses) — le quadrilatère doit être cohérent avec la position du QR, sinon refus."""
+def mask_marker(img, corner):
+    mx, my = sheet.MARKERS[corner]
+    cv2.rectangle(img, (mm2px(mx - 5), mm2px(my - 5)), (mm2px(mx + 5), mm2px(my + 5)), 255, -1)
+
+
+@pytest.mark.parametrize("corner, fake", [(0, (12, 60)), (0, (40, 50)), (0, (100, 12)), (1, None), (2, (150, 200)), (3, None)])
+def test_missing_marker_rebuilt(sheet_image, corner, fake):
+    """Repère masqué (éventuellement + carré noir ailleurs, qui faisait redresser la page de
+    travers) : sa position est déduite des 3 autres et validée par le QR, lecture exacte."""
+    gray, qr = sheet_image
+    img = draw_marks(gray, ANSWERS)
+    mask_marker(img, corner)
+    if fake:
+        fx, fy = fake
+        cv2.rectangle(img, (mm2px(fx - 3.5), mm2px(fy - 3.5)), (mm2px(fx + 3.5), mm2px(fy + 3.5)), 0, -1)
+    res = omr.scan(photograph(img, angle=3, seed=corner + 1), preview=False)
+    assert res["qr"] == qr
+    check_answers(res)
+    assert any("non reconnu" in w for w in res["warnings"])
+
+
+def test_two_missing_markers_rejected(sheet_image):
+    """Deux repères manquants : pas assez d'information, refus plutôt qu'une note fausse."""
     gray, _ = sheet_image
     img = draw_marks(gray, ANSWERS)
-    mx, my = sheet.MARKERS[0]
-    cv2.rectangle(img, (mm2px(mx - 5), mm2px(my - 5)), (mm2px(mx + 5), mm2px(my + 5)), 255, -1)
-    fx, fy = fake
-    cv2.rectangle(img, (mm2px(fx - 3.5), mm2px(fy - 3.5)), (mm2px(fx + 3.5), mm2px(fy + 3.5)), 0, -1)
-    with pytest.raises(omr.ScanError, match="incohérents"):
+    mask_marker(img, 1)
+    mask_marker(img, 2)
+    with pytest.raises(omr.ScanError, match="introuvables ou incohérents"):
         omr.scan(photograph(img, angle=3, seed=1), preview=False)
-
 
 
 @pytest.mark.parametrize("corner", [0, 1, 2, 3])

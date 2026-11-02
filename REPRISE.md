@@ -87,7 +87,14 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
 - OMR, robustesse des repères (cas réel : poussière de scanner collée au repère TL, le motif du
   QR était pris à sa place → page redressée de travers, note fausse) : 2e passe de détection
   avec ouverture ~1,5 mm ; et tout quadrilatère est validé par la position/le sens du QR
-  (`_qr_fits`), sinon page refusée (« repères incohérents ») plutôt que mal notée.
+  (`_qr_fits`) puis par les cadres des cases (`_validate`, géométrie lue dans le QR avant le
+  repérage) ; sinon page refusée (« repères incohérents ») plutôt que mal notée.
+- Repère manquant : reconstitué à partir des 3 autres (`_rebuild_corner`, affine + QR), puis
+  position du 4e cherchée en alignant toute la grille de cadres sur l'encre
+  (`_search_missing`, 2 degrés de liberté), recalage RANSAC ancré sur les repères mesurés
+  (`_refine` : sans ancres, la grille régulière autorise un décalage d'une ligne), critère
+  strict (9e décile ≤ 0,8 mm). Stress : 0 lecture fausse / 150 ; scanner 40/40 lues,
+  perspective forte ~70 % lues, le reste refusé. Avertissement « Repère … non reconnu ».
 - Mobile : pas de backdrop-filter sur `.topbar` (il retenait la barre d'onglets fixe en haut).
 
 - **Densité** (2026-10-04) : `exam.density` = `large` / `normal` / `compact`
