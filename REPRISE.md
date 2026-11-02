@@ -84,6 +84,10 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
   `fc-match`), `docker-compose.yml` (app en lecture seule + cloudflared, jeton
   `CLOUDFLARE_TUNNEL_TOKEN`, hôte public → http://app:8000), CI `.github/workflows/ci.yml`
   (pytest → build → fumée → GHCR ; déploiement SSH optionnel via `vars.DEPLOY_ENABLED`).
+- OMR, robustesse des repères (cas réel : poussière de scanner collée au repère TL, le motif du
+  QR était pris à sa place → page redressée de travers, note fausse) : 2e passe de détection
+  avec ouverture ~1,5 mm ; et tout quadrilatère est validé par la position/le sens du QR
+  (`_qr_fits`), sinon page refusée (« repères incohérents ») plutôt que mal notée.
 - Mobile : pas de backdrop-filter sur `.topbar` (il retenait la barre d'onglets fixe en haut).
 
 - **Densité** (2026-10-04) : `exam.density` = `large` / `normal` / `compact`

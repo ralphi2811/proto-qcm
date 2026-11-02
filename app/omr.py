@@ -42,6 +42,7 @@ class ScanError(Exception):
 class QrHit:
     text: str
     center: tuple[float, float]
+    top_left: tuple[float, float] | None = None  # coin du motif de recherche haut-gauche du symbole
 
 
 # --------------------------------------------------------------------------- utils
@@ -71,7 +72,7 @@ def _read_qr(gray: np.ndarray) -> QrHit | None:
             pts = [p.top_left, p.top_right, p.bottom_right, p.bottom_left]
             cx = sum(q.x for q in pts) / 4
             cy = sum(q.y for q in pts) / 4
-            return QrHit(res.text, (cx, cy))
+            return QrHit(res.text, (cx, cy), (p.top_left.x, p.top_left.y))
     return None
 
 
@@ -84,17 +85,9 @@ def read_qr_text(data: bytes) -> str | None:
 # ----------------------------------------------------------------------- repères
 
 
-def _marker_candidates(gray: np.ndarray) -> list[tuple[float, float, float]]:
-    """Renvoie [(cx, cy, aire)] des taches carrées pleines."""
-    h, w = gray.shape
-    block = int(max(h, w) / 8) | 1
-    blur = cv2.GaussianBlur(gray, (5, 5), 0)
-    th = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, block, 12)
-    th = cv2.morphologyEx(th, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
+def _square_blobs(th: np.ndarray, min_area: float, max_area: float) -> list[tuple[float, float, float]]:
+    """[(cx, cy, aire)] des taches carrées pleines d'une image binaire (encre = 255)."""
     contours, _ = cv2.findContours(th, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-
-    min_area = (max(h, w) / 300) ** 2
-    max_area = (max(h, w) / 12) ** 2
     out = []
     for c in contours:
         area = cv2.contourArea(c)
@@ -123,16 +116,40 @@ def _marker_candidates(gray: np.ndarray) -> list[tuple[float, float, float]]:
     return out
 
 
+def _marker_candidates(gray: np.ndarray) -> list[tuple[float, float, float]]:
+    """Renvoie [(cx, cy, aire)] des taches carrées pleines.
+
+    Deux passes : ouverture fine (petits repères, photo prise de loin), puis ouverture
+    d'environ 1,5 mm à l'échelle d'une page plein cadre, qui détache d'un repère un trait
+    fin qui le touche (poussière du scanner, trait de stylo) et l'empêchait d'être carré."""
+    h, w = gray.shape
+    block = int(max(h, w) / 8) | 1
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    th = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, block, 12)
+    min_area = (max(h, w) / 300) ** 2
+    max_area = (max(h, w) / 12) ** 2
+    k = max(5, int(max(h, w) * 1.5 / sheet.PAGE_H) | 1)
+    out: list[tuple[float, float, float]] = []
+    for size in (3, k):
+        opened = cv2.morphologyEx(th, cv2.MORPH_OPEN, np.ones((size, size), np.uint8))
+        for cx, cy, area in _square_blobs(opened, min_area, max_area):
+            r = np.sqrt(area) / 2
+            if not any(np.hypot(cx - x, cy - y) < r for x, y, _ in out):
+                out.append((cx, cy, area))
+    return out
+
+
 def _quad_area(pts: np.ndarray) -> float:
     return float(cv2.contourArea(cv2.convexHull(pts.astype(np.float32))))
 
 
-def _find_markers(gray: np.ndarray) -> np.ndarray:
+def _marker_quads(gray: np.ndarray, keep: int = 25) -> list[np.ndarray]:
+    """Quadrilatères plausibles de 4 repères (sens horaire), du plus grand au plus petit."""
     cands = sorted(_marker_candidates(gray), key=lambda t: -t[2])[:16]
     if len(cands) < 4:
         raise ScanError(f"Repères introuvables ({len(cands)}/4) — cadrez toute la feuille, bien éclairée")
     expected_ratio = (sheet.MARKERS[1][0] - sheet.MARKERS[0][0]) / (sheet.MARKERS[3][1] - sheet.MARKERS[0][1])
-    best, best_score = None, 0.0
+    found = []
     for combo in itertools.combinations(cands, 4):
         areas = [c[2] for c in combo]
         if max(areas) / min(areas) > 3:
@@ -151,11 +168,49 @@ def _find_markers(gray: np.ndarray) -> np.ndarray:
         a = _quad_area(pts)
         if np.mean(areas) > a / 150:
             continue
-        if a > best_score:
-            best, best_score = ordered, a
-    if best is None:
+        found.append((a, ordered))
+    if not found:
         raise ScanError("Impossible d'identifier les 4 repères de la feuille")
-    return best
+    found.sort(key=lambda t: -t[0])
+    return [q for _, q in found[:keep]]
+
+
+def _homography(corners: np.ndarray) -> np.ndarray:
+    """Image -> page en mm, d'après les 4 repères orientés (TL, TR, BR, BL)."""
+    return cv2.getPerspectiveTransform(corners.astype(np.float32), np.array(sheet.MARKERS, np.float32))
+
+
+QR_CENTER_MM = (sheet.QR_BOX[0] + sheet.QR_BOX[2] / 2, sheet.QR_BOX[1] + sheet.QR_BOX[2] / 2)
+QR_TOL_MM = 5.0
+
+
+def _qr_fits(corners: np.ndarray, qr: QrHit) -> bool:
+    """Le QR, ramené sur la page par ces repères, tombe-t-il à sa place et dans le bon sens ?
+    Écarte un quadrilatère formé avec une case noircie ou un motif du QR au lieu d'un repère."""
+    H = _homography(corners)
+    pts = [qr.center] + ([qr.top_left] if qr.top_left else [])
+    mm = cv2.perspectiveTransform(np.array([pts], np.float32), H)[0]
+    cx, cy = mm[0]
+    if np.hypot(cx - QR_CENTER_MM[0], cy - QR_CENTER_MM[1]) > QR_TOL_MM:
+        return False
+    if qr.top_left:  # le coin haut-gauche du symbole doit être en haut à gauche de son centre
+        tx, ty = mm[1]
+        if not (tx < cx - 8 and ty < cy - 8):
+            return False
+    return True
+
+
+def _locate(gray: np.ndarray, qr: QrHit | None) -> np.ndarray:
+    """Coins orientés de la feuille : le plus grand quadrilatère de repères cohérent avec le QR."""
+    quads = _marker_quads(gray)
+    if qr is None:
+        return _orient(quads[0], None)
+    for q in quads:
+        corners = _orient(q, qr)
+        if _qr_fits(corners, qr):
+            return corners
+    raise ScanError("Repères de la feuille incohérents avec le QR code — un carré noir est masqué, "
+                    "coupé ou confondu avec une case noircie ; reprenez la photo ou le scan")
 
 
 def _cyclic(pts: np.ndarray) -> np.ndarray:
@@ -351,7 +406,7 @@ def scan_pdf_page(data: bytes, index: int, fallback_params: dict | None = None) 
 def scan(data: bytes | np.ndarray, fallback_params: dict | None = None, preview: bool = True) -> dict:
     gray = _load_gray(data)
     qr = _read_qr(gray)
-    corners = _orient(_find_markers(gray), qr)
+    corners = _locate(gray, qr)
     warped = _warp(gray, corners)
 
     if qr is None:  # seconde chance sur l'image redressée (zone connue)

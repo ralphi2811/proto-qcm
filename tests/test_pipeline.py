@@ -204,3 +204,31 @@ def test_qr_damaged_still_reads(sheet_image):
 def test_header_roundtrip():
     h = parse_header(fake_qr(style=sheet.LARGE))
     assert (h.n_questions, h.n_options, h.style) == (N_Q, N_OPT, sheet.LARGE)
+
+
+@pytest.mark.parametrize("fake", [(12, 60), (40, 50), (100, 12)])
+def test_wrong_marker_quad_is_rejected(sheet_image, fake):
+    """Repère masqué + carré noir ailleurs : jamais de feuille redressée de travers (notes
+    fausses) — le quadrilatère doit être cohérent avec la position du QR, sinon refus."""
+    gray, _ = sheet_image
+    img = draw_marks(gray, ANSWERS)
+    mx, my = sheet.MARKERS[0]
+    cv2.rectangle(img, (mm2px(mx - 5), mm2px(my - 5)), (mm2px(mx + 5), mm2px(my + 5)), 255, -1)
+    fx, fy = fake
+    cv2.rectangle(img, (mm2px(fx - 3.5), mm2px(fy - 3.5)), (mm2px(fx + 3.5), mm2px(fy + 3.5)), 0, -1)
+    with pytest.raises(omr.ScanError, match="incohérents"):
+        omr.scan(photograph(img, angle=3, seed=1), preview=False)
+
+
+
+@pytest.mark.parametrize("corner", [0, 1, 2, 3])
+def test_marker_with_touching_stroke(sheet_image, corner):
+    """Poussière de scanner / trait fin collé à un repère (cas réel) : le repère reste détecté."""
+    gray, qr = sheet_image
+    img = draw_marks(gray, ANSWERS)
+    mx, my = sheet.MARKERS[corner]
+    x0, y0 = mx - sheet.MARKER_SIZE / 2, my - sheet.MARKER_SIZE / 2
+    cv2.line(img, *pts((x0 + 0.3, y0 - 3), (x0 + 0.3, y0 + 1)), 0, max(1, mm2px(0.5)))
+    res = omr.scan(photograph(img, angle=2, seed=corner), preview=False)
+    assert res["qr"] == qr
+    check_answers(res)
