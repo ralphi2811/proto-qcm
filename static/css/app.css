@@ -303,6 +303,36 @@ input:focus, select:focus, .rich:focus { outline: 2px solid color-mix(in srgb, v
 .page-label { margin: 12px 0 4px; }
 .canvases .canvas-wrap { margin-top: 4px; }
 
+/* ---------- copies à corriger : une à la fois ---------- */
+.deck { margin-top: 16px; scroll-margin-top: 64px; }
+.deck-nav {
+  position: sticky; top: 58px; z-index: 9; display: flex; align-items: center; gap: 8px;
+  padding: 8px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface); box-shadow: var(--shadow);
+}
+.deck-nav > .btn { flex: none; }
+.deck-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.deck-count { font-weight: 600; font-size: .9rem; text-align: center; }
+.deck-strip { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+.deck-strip:empty { display: none; }
+.deck-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; max-width: 170px; padding: 4px 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2); color: var(--text);
+  font: inherit; font-size: .8rem; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.deck-chip .icon { width: 14px; height: 14px; flex: none; }
+.deck-chip.ok .icon { color: var(--ok); }
+.deck-chip.warn .icon { color: var(--warn); }
+.deck-chip.on { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.deck-stage { overflow-x: clip; }
+.deck-stage > .result-card.from-right { animation: deck-right .22s ease-out; }
+.deck-stage > .result-card.from-left { animation: deck-left .22s ease-out; }
+@keyframes deck-right { from { opacity: 0; transform: translateX(40px); } }
+@keyframes deck-left { from { opacity: 0; transform: translateX(-40px); } }
+@media (prefers-reduced-motion: reduce) { .deck-stage > .result-card { animation: none !important; } }
+.deck-done p { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-weight: 600; color: var(--ok); }
+@media (max-width: 720px) { .deck-nav { top: 52px; } }
+
 /* ---------- boîtes de dialogue ---------- */
 .modal[open] { animation: dlg-in .16s ease-out; }
 .modal[open]::backdrop { animation: fade-in .16s ease-out; }

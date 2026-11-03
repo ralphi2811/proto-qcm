@@ -98,6 +98,8 @@ export function renderScanner(view) {
       })).json();
       return { ...res, student: roster && res.roster_index >= 0 ? roster.students[res.roster_index] : null };
     }),
+    /** État d'une copie changé (lecture, nom, cases) : pastilles de navigation à jour. */
+    refresh: () => scheduleStrip(),
     /** Une identité a changé : les autres copies revoient leur alerte de doublon. */
     identChanged: (copy) => copies.forEach((c) => { if (c !== copy && !c.saved && !c.discarded) c.renderIdentStatus(false); }),
     /** Même élève déjà enregistré pour ce QCM, ou dans une autre copie ouverte ? */
@@ -157,6 +159,97 @@ export function renderScanner(view) {
 
   const reportError = (label, msg) =>
     queue.prepend(h('div', { class: 'card alert error' }, h('strong', {}, label), ' : ', msg));
+
+  // ---- copies : une à la fois, navigation horizontale (flèches, glissé, pastilles).
+  // Les nouvelles copies s'ajoutent à la fin sans déplacer celle qu'on corrige ; après
+  // « Enregistrer », la suivante prend sa place, en haut.
+  const deck = []; // copies à traiter, dans l'ordre d'arrivée
+  let cur = 0;
+  let done = 0;
+  const stage = h('div', { class: 'deck-stage' });
+  const strip = h('div', { class: 'deck-strip' });
+  const counter = h('span', { class: 'deck-count' });
+  const prevBtn = h('button', { class: 'btn icon-btn', 'aria-label': 'Copie précédente', title: 'Copie précédente (←)', onclick: () => show(cur - 1) }, icon('left'));
+  const nextBtn = h('button', { class: 'btn icon-btn', 'aria-label': 'Copie suivante', title: 'Copie suivante (→)', onclick: () => show(cur + 1) }, icon('right'));
+  const deckBox = h('div', { class: 'deck', hidden: true },
+    h('div', { class: 'deck-nav' }, prevBtn, h('div', { class: 'deck-mid' }, counter, strip), nextBtn),
+    stage);
+
+  function show(i, { scroll = true } = {}) {
+    if (!deck.length || i < 0 || i >= deck.length) return;
+    const dir = Math.sign(i - cur);
+    cur = i;
+    const card = deck[cur].card;
+    card.classList.remove('from-left', 'from-right');
+    if (dir) { void card.offsetWidth; card.classList.add(dir > 0 ? 'from-right' : 'from-left'); }
+    stage.replaceChildren(card);
+    renderStrip();
+    // la copie commence en haut de l'écran, même si on avait défilé jusqu'au bouton Enregistrer
+    if (scroll && deckBox.getBoundingClientRect().top < 0) deckBox.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  function renderStrip() {
+    deckBox.hidden = !deck.length && !done;
+    prevBtn.disabled = cur <= 0;
+    nextBtn.disabled = cur >= deck.length - 1;
+    const left = deck.length;
+    counter.textContent = left
+      ? `Copie ${cur + 1} / ${left}${done ? ` · ${done} enregistrée${done > 1 ? 's' : ''}` : ''}`
+      : `${done} copie${done > 1 ? 's' : ''} enregistrée${done > 1 ? 's' : ''}`;
+    setChildren(strip, deck.map((c, i) => {
+      const st = c.status();
+      return h('button', {
+        class: `deck-chip ${st}${i === cur ? ' on' : ''}`, title: { ok: 'Prête', warn: 'À vérifier', busy: 'Lecture du nom…' }[st],
+        onclick: () => show(i),
+      }, st === 'busy' ? h('span', { class: 'spinner small' }) : st === 'ok' ? icon('check') : icon('alert'), c.chipLabel());
+    }));
+    strip.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (!left && done) {
+      stage.replaceChildren(h('div', { class: 'card deck-done' },
+        h('p', {}, icon('check'), ` Toutes les copies sont traitées (${done} enregistrée${done > 1 ? 's' : ''}).`),
+        h('a', { class: 'btn', href: '#/results' }, 'Voir les résultats')));
+    }
+  }
+  let stripQueued = false;
+  function scheduleStrip() {
+    if (stripQueued) return;
+    stripQueued = true;
+    requestAnimationFrame(() => { stripQueued = false; renderStrip(); });
+  }
+
+  function addToDeck(copy) {
+    deck.push(copy);
+    if (deck.length === 1) show(0, { scroll: false });
+    else renderStrip();
+  }
+
+  /** Copie enregistrée ou ignorée : elle quitte la pile, la suivante prend sa place. */
+  function closeCopy(copy) {
+    const i = deck.indexOf(copy);
+    if (i < 0) return;
+    if (copy.saved) done++;
+    deck.splice(i, 1);
+    if (cur > i) cur--;
+    if (deck.length) { const next = Math.min(i, deck.length - 1); cur = next - 1; show(next); } // arrive par la droite
+    else { cur = 0; renderStrip(); }
+  }
+
+  // glissé horizontal (téléphone) et flèches du clavier
+  let touch = null;
+  stage.addEventListener('touchstart', (e) => { const t = e.touches[0]; touch = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }, { passive: true });
+  stage.addEventListener('touchend', (e) => {
+    if (!touch) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
+    touch = null;
+    if (Math.abs(dx) > 70 && Math.abs(dx) > 2 * Math.abs(dy)) show(cur + (dx < 0 ? 1 : -1));
+  });
+  const onKey = (e) => {
+    if (e.target.closest?.('input, textarea, select, [contenteditable]') || document.querySelector('dialog[open]')) return;
+    if (e.key === 'ArrowLeft') show(cur - 1);
+    else if (e.key === 'ArrowRight') show(cur + 1);
+  };
+  document.addEventListener('keydown', onKey);
 
   async function handleScan(scan, fallback, label) {
     try {
@@ -222,12 +315,13 @@ export function renderScanner(view) {
       latest.flag('La page 1 de la copie suivante est arrivée avant la fin de celle-ci : vérifiez l\'ordre des pages.');
     }
     if (!copy) {
-      copy = new Copy({ key, localExam, source, ctx, copyNo, nPages: p?.n_pages ?? 1, onClose: (c) => c.card.remove() });
+      copy = new Copy({ key, localExam, source, ctx, copyNo, nPages: p?.n_pages ?? 1, onClose: closeCopy });
       copies.push(copy);
+      addToDeck(copy);
     }
     notes.forEach((n) => copy.flag(n));
     copy.addPage(page, scan);
-    queue.prepend(copy.card);
+    scheduleStrip();
   }
 
   const camera = h('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true, onchange: (e) => { enqueue([...e.target.files]); e.target.value = ''; } });
@@ -262,9 +356,10 @@ export function renderScanner(view) {
       ),
       busy,
       queue,
+      deckBox,
     ),
   );
-  return () => {};
+  return () => document.removeEventListener('keydown', onKey);
 }
 
 /** Lit une réponse NDJSON au fil de l'eau (une ligne JSON par page). */
@@ -300,6 +395,19 @@ class Copy {
     this.ident = {};
     this.flags = new Set(); // alertes de regroupement des pages
     this.build();
+  }
+
+  /** État résumé pour la navigation : lecture en cours, à vérifier, ou prête. */
+  status() {
+    if (this.reading) return 'busy';
+    const nom = this.ident.nom?.value.trim();
+    return this.alerts.childElementCount || this.identStatus.querySelector('.warn, .error') || !nom ? 'warn' : 'ok';
+  }
+
+  chipLabel() {
+    const id = this.identity();
+    const who = [id.nom, id.prenom].filter(Boolean).join(' ');
+    return who || (this.copyNo ? `n° ${this.copyNo}` : 'Sans nom');
   }
 
   cellsOf(page) { return this.pages.get(page).scan.cells.filter((c) => c.o < (this.key.questions[c.q]?.nOpt ?? 0)); }
@@ -447,6 +555,7 @@ class Copy {
     if (dup) tags.push(h('span', { class: 'tag error' }, `⚠ ${dup}`));
     setChildren(this.identStatus, tags);
     if (propagate) this.ctx.identChanged(this);
+    this.ctx.refresh?.();
   }
 
   identity() {
@@ -492,6 +601,7 @@ class Copy {
     ].filter(Boolean));
 
     for (const n of this.pages.keys()) this.draw(n);
+    this.ctx.refresh?.();
   }
 
   draw(n) {

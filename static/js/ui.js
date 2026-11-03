@@ -29,6 +29,8 @@ export function icon(name) {
     trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
     up: 'M12 19V5M5 12l7-7 7 7',
     down: 'M12 5v14M5 12l7 7 7-7',
+    left: 'M15 5l-7 7 7 7',
+    right: 'M9 5l7 7-7 7',
     copy: 'M8 8h12v12H8zM4 16V4h12',
     check: 'M5 12l5 5 9-10',
     x: 'M6 6l12 12M18 6L6 18',

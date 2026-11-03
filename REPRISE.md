@@ -129,6 +129,11 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
   détail dans l'ordre de l'éditeur à l'enregistrement ; résultat `variant`, colonne CSV « Sujet ».
 - **Ligne d'écriture** dans les cadres du cartouche (`sheet.NAME_GUIDE_MM`).
 
+- **Correction une copie à la fois** (2026-11-03) : `deck` dans `renderScanner` (ordre d'arrivée,
+  flèches, ←/→, glissé, pastilles `Copy.status()` ok/warn/busy). Enregistrer/Ignorer retire la
+  copie, la suivante arrive à sa place et la page remonte en haut de la copie. Les copies qui
+  arrivent pendant la correction s'ajoutent à la fin sans déplacer la copie affichée.
+
 ## Fichiers clés
 - `app/sheet.py` : géométrie de la grille, utilisée par le PDF **et** par l'OMR (à modifier ici uniquement)
 - `app/payload.py` / `static/js/crypto.js` : format du QR (les deux doivent rester synchronisés)
