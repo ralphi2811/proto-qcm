@@ -142,6 +142,7 @@ input:focus, select:focus, .rich:focus { outline: 2px solid color-mix(in srgb, v
   font-size: 1.9rem; font-weight: 750; border: 0; background: transparent; padding: 4px 2px; margin-bottom: 12px;
   border-radius: 8px;
 }
+.title-hint { margin: -10px 2px 12px; color: var(--warn); }
 .settings summary { cursor: pointer; font-weight: 600; }
 .rich {
   min-height: 40px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 10px;

@@ -131,6 +131,10 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
   détail dans l'ordre de l'éditeur ; résultat `variant` + `group` (titre `QCM <groupe>` sans QCM
   local, doublons détectés entre A et B), colonne CSV « Sujet ».
 - **Ligne d'écriture** dans les cadres du cartouche (`sheet.NAME_GUIDE_MM`).
+- **Titres longs** (0.3.1) : `subject.header_title` / `footer_text` mesurent le titre (police réelle),
+  le réduisent jusqu'à 2,9 mm puis le tronquent avec « … » : ni chevauchement de la consigne
+  « MAJUSCULES » (≈ 44 caractères en page 1), ni pied de page sur le repère noir (sujet et grille).
+  L'éditeur prévient au-delà de 44 caractères (34 en A/B) ; l'IA vise ≤ 40 caractères.
 
 - **Correction en carrousel** (2026-11-03) : `deck` dans `renderScanner` (ordre d'arrivée).
   `.deck-stage` = défilement horizontal natif aimanté (scroll-snap), hauteur calée sur la copie

@@ -169,6 +169,8 @@ Règles :
   en ligne (ex. 3/4, x², 2 × 5).
 - Pour chaque question, une explication courte (1 phrase) justifie la bonne réponse :
   elle sert à l'enseignant pour vérifier.
+- Le titre est court (40 caractères maximum, ex. « Les fractions ») : il est imprimé dans le
+  cartouche de la copie ; pas de niveau, de classe ni de date dans le titre.
 Réponds uniquement avec l'objet JSON demandé."""
 
 
@@ -178,7 +180,7 @@ def _schema() -> dict:
         "additionalProperties": False,
         "required": ["title", "questions"],
         "properties": {
-            "title": {"type": "string", "description": "Titre court du QCM"},
+            "title": {"type": "string", "description": "Titre court du QCM : 40 caractères maximum, sans niveau ni date"},
             "questions": {
                 "type": "array",
                 "items": {

@@ -148,3 +148,21 @@ def test_dense_twenty_questions_one_page():
     assert len(st) == 80
     assert {k for k, c in st.items() if c["state"] == "marked"} == expect_marked
     assert {k for k, c in st.items() if c["circled"]} == expect_circled
+
+
+def test_long_title_stays_clear_of_hint_and_markers():
+    """Titre long (IA, « Sujet B — ») : réduit puis tronqué, sans chevaucher la consigne du
+    cartouche ni atteindre le repère noir du bas."""
+    nx, _ny, nw, _nh = sheet.NAME_BOX
+    hint_left = nx + nw - 3 - subject.text_mm(subject.NAME_HINT, subject.HINT_MM)
+    marker_left = sheet.MARKERS[2][0] - sheet.MARKER_SIZE / 2
+    for title in ["Les fractions", "Sujet B — Évaluation de mathématiques : les fractions et les nombres décimaux (CM2)"]:
+        text, size = subject.header_title(title)
+        assert subject.TITLE_MIN_MM <= size <= subject.TITLE_MM
+        assert nx + 3 + subject.text_mm(text, size, bold=True) < hint_left
+        assert (text == title) == (len(title) < 40)
+        alone, _ = subject.header_title(title, with_hint=False)  # pages suivantes : toute la largeur
+        assert len(alone) >= len(text)
+        foot = subject.footer_text(title, "abcd1234 · page 1 / 3 · n° 12 · ne pas plier, ne pas écrire près des carrés noirs")
+        assert sheet.INNER_LEFT + subject.text_mm(foot, subject.FOOT_MM) < marker_left
+        assert foot.endswith("carrés noirs")

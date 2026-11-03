@@ -301,14 +301,26 @@ export function renderEditor(view, exam, { openAi = false } = {}) {
     const first = exam.questions.length;
     // un QCM neuf ne contient qu'une question vide : on la remplace
     exam.questions = [...exam.questions.filter((q) => !isBlank(q)), ...questions];
-    if (title && (!exam.title.trim() || exam.title === 'Nouveau QCM')) { exam.title = title; titleInput.value = title; }
+    if (title && (!exam.title.trim() || exam.title === 'Nouveau QCM')) { exam.title = title; titleInput.value = title; checkTitle(); }
     renderQuestions(); changed();
     list.children[Math.min(first, exam.questions.length - questions.length)]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+  // place du titre dans le cartouche de la copie (page 1, à côté de la consigne) : au-delà il est
+  // raccourci avec « … » à l'impression (mesure exacte côté serveur, estimation ici)
+  const TITLE_FITS = 44; // caractères, préfixe « Sujet B — » (10) compris en deux modèles
+  const titleHint = h('p', { class: 'small title-hint' });
+  const checkTitle = () => {
+    const long = exam.title.trim().length > TITLE_FITS - (exam.lastTwoModels ? 10 : 0);
+    titleHint.hidden = !long;
+    titleHint.textContent = long
+      ? `Titre long (${exam.title.trim().length} caractères) : il sera raccourci avec « … » sur la copie. Mettez la classe ou la date dans le sous-titre (Paramètres).`
+      : '';
+  };
   const titleInput = h('input', {
     class: 'title-input', value: exam.title, placeholder: 'Titre du QCM', 'aria-label': 'Titre du QCM',
-    oninput: (e) => { exam.title = e.target.value; changed(); },
+    oninput: (e) => { exam.title = e.target.value; checkTitle(); changed(); },
   });
+  checkTitle();
 
   view.replaceChildren(
     h('section', { class: 'page editor' },
@@ -317,6 +329,7 @@ export function renderEditor(view, exam, { openAi = false } = {}) {
         status,
       ),
       titleInput,
+      titleHint,
       settings,
       formatToolbar(),
       list,

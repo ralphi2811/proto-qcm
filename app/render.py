@@ -100,6 +100,11 @@ def render_html(req: PdfRequest) -> str:
         exam_id=header.exam_id,
         large=style == sheet.LARGE,
         show_pts=subject.show_points(exam),
+        title_fit=subject.header_title(exam.title),
+        hint=subject.NAME_HINT,
+        hint_mm=subject.HINT_MM,
+        foot=subject.footer_text(exam.title, f"{header.exam_id} · ne pas plier, ne pas écrire près des carrés noirs"),
+        foot_mm=subject.FOOT_MM,
         check_svg=_EXAMPLE_CHECK,
         circle_svg=_EXAMPLE_CIRCLE,
     )

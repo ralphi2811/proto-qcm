@@ -78,6 +78,51 @@ def text_width_mm(html: str, font_pt: float) -> float:
     return font.getlength(text) / 100 * font_pt * PT_MM
 
 
+# ---------------------------------------------------------------- titre, pied de page
+# Le titre (souvent long, surtout généré par l'IA ou préfixé « Sujet B — ») ne doit ni chevaucher
+# la consigne du cartouche ni atteindre le repère noir du bas : mesuré avec la vraie police,
+# réduit un peu, puis tronqué avec « … ». Tailles en mm (= unités du fond SVG).
+NAME_HINT = "écrire en MAJUSCULES dans les cadres"
+TITLE_MM, TITLE_MIN_MM, HINT_MM, FOOT_MM = 3.7, 2.9, 2.5, 2.3
+
+
+def text_mm(text: str, size_mm: float, bold: bool = False) -> float:
+    font = _font(bold)
+    if font is None:
+        return len(text) * 0.6 * size_mm
+    return font.getlength(text) / 100 * size_mm
+
+
+def fit_text(text: str, max_w: float, size: float, min_size: float | None = None, bold: bool = False) -> tuple[str, float]:
+    """Plus grande taille (≥ min_size) où le texte tient dans max_w ; sinon tronqué avec « … »."""
+    min_size = min(size, min_size or size)
+    w = text_mm(text, size, bold)
+    if w <= max_w:
+        return text, size
+    s = round(size * max_w / w - 0.05, 1)  # la largeur est proportionnelle à la taille
+    if s >= min_size:
+        return text, s
+    while text and text_mm(text.rstrip() + "…", min_size, bold) > max_w:
+        text = text[:-1]
+    return text.rstrip() + "…", min_size
+
+
+def header_title(title: str, with_hint: bool = True) -> tuple[str, float]:
+    """Titre du cartouche : à gauche de la consigne (page 1) ou sur toute la largeur."""
+    avail = sheet.NAME_BOX[2] - 6.0
+    if with_hint:
+        avail -= text_mm(NAME_HINT, HINT_MM) + 4.0
+    return fit_text(title, avail, TITLE_MM, TITLE_MIN_MM, bold=True)
+
+
+def footer_text(title: str, rest: str) -> str:
+    """Pied de page entre les repères du bas : seul le titre est raccourci."""
+    avail = sheet.MARKERS[2][0] - sheet.MARKER_SIZE / 2 - 2.0 - sheet.INNER_LEFT
+    suffix = f" · {rest}"
+    t, _ = fit_text(title, max(30.0, avail - text_mm(suffix, FOOT_MM)), FOOT_MM)
+    return t + suffix
+
+
 def option_columns(options, font_pt: float = 11.5, col_gap: float = 5.0, box: float = 6.0) -> int:
     """Nombre de colonnes pour les propositions : le moins de lignes possible, à condition
     que chaque proposition tienne sur une ligne dans sa colonne (largeur mesurée)."""
@@ -172,11 +217,11 @@ def page_background(qr_text: str, title: str, page: int, n_pages: int, copy: int
 
     nx, ny, nw, nh = S.NAME_BOX
     parts.append(f'<rect x="{nx}" y="{ny}" width="{nw}" height="{nh}" rx="1.5" fill="none" stroke="#222" stroke-width="0.4"/>')
-    short_title = title if len(title) <= 48 else title[:46] + "…"
-    parts.append(_text(nx + 3, ny + 5.2, short_title, 3.7, "bold", fill="#111"))
+    short_title, size = header_title(title, with_hint=page == 1)
+    parts.append(_text(nx + 3, ny + 5.2, short_title, size, "bold", fill="#111"))
     pages_txt = f"page {page} / {n_pages}" + (f" · n° {copy}" if copy else "")
     if page == 1:
-        parts.append(_text(nx + nw - 3, ny + 5.0, "écrire en MAJUSCULES dans les cadres", 2.5, anchor="end", fill="#555"))
+        parts.append(_text(nx + nw - 3, ny + 5.0, NAME_HINT, HINT_MM, anchor="end", fill="#555"))
         for key, (label, fx, fy, fw, fh) in S.NAME_FIELDS.items():
             parts.append(_text(nx + 3, fy + fh / 2 + 1.2, label, 3.2))
             parts.append(_field(fx, fy, fw, fh))
@@ -186,8 +231,8 @@ def page_background(qr_text: str, title: str, page: int, n_pages: int, copy: int
         parts.append(_field(fx, fy, fw, fh))
         parts.append(_text(nx + nw / 2, ny + nh - 7, pages_txt.capitalize(), 5, "bold", anchor="middle", fill="#333"))
     parts.append(_text(S.INNER_LEFT, S.FOOTER_Y,
-                       f"{title} · {exam_id} · {pages_txt} · ne pas plier, ne pas écrire près des carrés noirs",
-                       2.3, fill="#777"))
+                       footer_text(title, f"{exam_id} · {pages_txt} · ne pas plier, ne pas écrire près des carrés noirs"),
+                       FOOT_MM, fill="#777"))
     svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297">{"".join(parts)}</svg>'
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
 
