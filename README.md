@@ -121,6 +121,10 @@ déchiffre le QR avec sa clé, note, enregistre localement
   pas » imprimés sur la grille. Seuils en surface d'encre (mm²), indépendants de la taille.
 - **Cases douteuses** signalées en jaune ; un toucher sur une case inverse la lecture.
 
+- **Correction** : mode scan du téléphone en rafale (photo automatique, bip, « posez la page
+  suivante », pas deux photos de la même feuille) ou import de photos / PDF de scanner ; les
+  copies s'affichent une à la fois (flèches, ← →, glissé, pastilles d'état).
+
 ## Arborescence
 
 ```
@@ -142,5 +146,4 @@ tests/          tests bout en bout avec photos simulées
 - OMR côté serveur uniquement (portage possible en OpenCV.js / WASM pour un mode hors-ligne).
 - Mode grille : une seule page de grille (jusqu'à ~130 questions à 4 choix).
 - localStorage (~5 Mo) : passer à IndexedDB si beaucoup d'images.
-- À venir : sujets mélangés A/B (le QR par copie le permet déjà), formules (KaTeX),
-  mode scan en rafale (enchaîner les copies sans fermer la caméra).
+- À venir : formules (KaTeX).

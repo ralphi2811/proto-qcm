@@ -134,6 +134,11 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
   copie, la suivante arrive à sa place et la page remonte en haut de la copie. Les copies qui
   arrivent pendant la correction s'ajoutent à la fin sans déplacer la copie affichée.
 
+- **Scan en rafale** (2026-11-03) : `camera.js` reste ouvert après chaque photo (bip WebAudio
+  généré, vibration, badge « ✓ n », bouton « Terminer · n pages »). Pas de nouvelle photo
+  auto tant que la page prise n'a pas disparu ~0,3 s (`GONE_FRAMES`) ; déclencheur manuel
+  toujours actif. Les photos partent à l'analyse au fil de l'eau.
+
 ## Fichiers clés
 - `app/sheet.py` : géométrie de la grille, utilisée par le PDF **et** par l'OMR (à modifier ici uniquement)
 - `app/payload.py` / `static/js/crypto.js` : format du QR (les deux doivent rester synchronisés)

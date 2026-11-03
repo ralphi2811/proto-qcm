@@ -1,5 +1,7 @@
 // Mode scan : caméra en direct, repères détectés sur le téléphone, déclenchement automatique
 // quand la feuille est entière, stable, nette et assez éclairée. Photo en pleine résolution.
+// Rafale : la caméra reste ouverte ; après chaque photo (bip, vibration), elle attend que la
+// feuille soit retirée avant d'en photographier une autre (pas deux fois la même page).
 import { analyzeFrame, toGray } from './markers.js';
 import { h, icon } from './ui.js';
 
@@ -10,6 +12,29 @@ const MIN_BRIGHTNESS = 85;
 const MAX_GLARE = 0.25;
 const STABLE_FRAMES = 4;
 const STABLE_TOL = 0.015; // déplacement max des coins, en fraction de la diagonale
+const GONE_FRAMES = 3; // images sans feuille (~0,3 s) : la page photographiée a été retirée
+
+/** Bip court, généré (pas de fichier son). Le contexte audio est créé au clic d'ouverture. */
+function beeper() {
+  let ac = null;
+  try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+  return () => {
+    if (!ac) return;
+    ac.resume?.();
+    const t = ac.currentTime;
+    for (const [f, dt] of [[880, 0], [1320, 0.09]]) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + dt);
+      g.gain.exponentialRampToValueAtTime(0.25, t + dt + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dt + 0.12);
+      o.connect(g).connect(ac.destination);
+      o.start(t + dt);
+      o.stop(t + dt + 0.13);
+    }
+  };
+}
 
 export const cameraSupported = () => !!(window.isSecureContext && navigator.mediaDevices?.getUserMedia);
 
@@ -18,6 +43,7 @@ export const cameraSupported = () => !!(window.isSecureContext && navigator.medi
  * Renvoie une promesse résolue à la fermeture ; rejetée si la caméra est inaccessible.
  */
 export async function openScanCamera({ onCapture }) {
+  const beep = beeper(); // avant tout await : encore dans le geste de l'utilisateur
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
     video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
@@ -36,12 +62,15 @@ export async function openScanCamera({ onCapture }) {
   const torchBtn = caps.torch ? h('button', { class: 'cam-btn', 'aria-label': 'Lampe', onclick: () => setTorch(!torchOn) }, '🔦') : null;
   const closeBtn = h('button', { class: 'cam-btn', 'aria-label': 'Fermer' }, icon('x'));
   const flash = h('div', { class: 'cam-flash' });
+  const doneBtn = h('button', { class: 'cam-done', hidden: true }, 'Terminer');
+  const badge = h('div', { class: 'cam-badge' });
 
   const dlg = h('dialog', { class: 'cam' },
-    h('div', { class: 'cam-stage' }, video, overlay, flash),
+    h('div', { class: 'cam-stage' }, video, overlay, flash, badge),
     h('div', { class: 'cam-top' }, closeBtn, h('span', { class: 'cam-title' }, 'Mode scan'), torchBtn ?? h('span')),
-    h('div', { class: 'cam-bottom' }, msg, shutter,
-      h('p', { class: 'cam-hint' }, 'Feuille à plat, les 4 carrés noirs dans le cadre : la photo se prend toute seule.')),
+    h('div', { class: 'cam-bottom' }, msg,
+      h('div', { class: 'cam-controls' }, h('span'), shutter, doneBtn),
+      h('p', { class: 'cam-hint' }, 'Feuille à plat, les 4 carrés noirs dans le cadre : la photo se prend toute seule. Enchaînez les pages, puis « Terminer ».')),
   );
   document.body.append(dlg);
   dlg.showModal();
@@ -58,6 +87,9 @@ export async function openScanCamera({ onCapture }) {
   let busy = false;
   let closed = false;
   let timer = 0;
+  let shots = 0;
+  let waitRemoval = false; // page photographiée encore sous la caméra
+  let gone = 0;
   let resolveClosed;
   const closedP = new Promise((r) => { resolveClosed = r; });
 
@@ -113,11 +145,17 @@ export async function openScanCamera({ onCapture }) {
       const res = analyzeFrame(toGray(wctx.getImageData(0, 0, w, hh).data, w, hh), w, hh);
       const diag = Math.hypot(w, hh);
       let good = false;
-      if (!res.corners) {
+      if (waitRemoval) {
+        gone = res.corners ? 0 : gone + 1;
+        if (gone >= GONE_FRAMES) { waitRemoval = false; history.length = 0; }
+      }
+      if (waitRemoval) {
+        setMsg(`✓ Page ${shots} prise — posez la page suivante`, 'ok');
+      } else if (!res.corners) {
         history.length = 0;
         sharpMax *= 0.97;
         setMsg(res.brightness < 50 ? 'Trop sombre : rapprochez-vous de la lumière' + (torchBtn && !torchOn ? ' ou allumez la lampe' : '')
-          : 'Cadrez la feuille entière : les 4 carrés noirs doivent être visibles');
+          : shots ? `Page ${shots + 1} : cadrez la feuille entière` : 'Cadrez la feuille entière : les 4 carrés noirs doivent être visibles');
       } else {
         sharpMax = Math.max(sharpMax * 0.99, res.sharpness);
         const isStable = stable(res.corners, diag);
@@ -128,7 +166,7 @@ export async function openScanCamera({ onCapture }) {
         else if (res.sharpness < Math.max(30, sharpMax * 0.6)) setMsg('Image floue : ne bougez plus…');
         else good = true;
       }
-      draw(res, scale, good);
+      draw(waitRemoval ? { corners: null } : res, scale, good);
       if (good) {
         okSince ||= performance.now();
         const p = Math.min(1, (performance.now() - okSince) / HOLD_MS);
@@ -174,9 +212,22 @@ export async function openScanCamera({ onCapture }) {
       const blob = await grab();
       if (torchOn) await setTorch(true); // certaines caméras éteignent la lampe après la photo
       onCapture(blob);
-      close();
+      shots++;
+      beep();
+      navigator.vibrate?.([40, 60, 40]);
+      badge.textContent = `✓ ${shots}`;
+      badge.classList.remove('go');
+      void badge.offsetWidth;
+      badge.classList.add('go');
+      doneBtn.hidden = false;
+      doneBtn.textContent = `Terminer · ${shots} page${shots > 1 ? 's' : ''}`;
+      waitRemoval = true;
+      gone = 0;
+      okSince = 0;
+      ring.style.setProperty('--p', 0);
     } catch (e) {
       setMsg(`Échec de la photo : ${e.message}`, 'warn');
+    } finally {
       busy = false;
     }
   }
@@ -191,7 +242,8 @@ export async function openScanCamera({ onCapture }) {
     resolveClosed();
   }
 
-  shutter.addEventListener('click', () => capture());
+  shutter.addEventListener('click', () => capture()); // à la main : même si la page n'a pas été retirée
+  doneBtn.addEventListener('click', close);
   closeBtn.addEventListener('click', close);
   dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
 
