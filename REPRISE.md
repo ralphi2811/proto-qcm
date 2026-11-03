@@ -69,6 +69,10 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
   À la correction : champs pré-remplis (jamais par-dessus une saisie manuelle), autocomplétion
   sur la liste, alerte doublon (même élève déjà corrigé pour ce QCM ou dans une copie ouverte).
   3 lectures simultanées au maximum (PDF de toute une classe).
+- Classe automatique : choix « Automatique (d'après la classe écrite) » (défaut dès 2 listes) :
+  tous les élèves de toutes les listes sont envoyés au modèle sous la forme « NOM Prénom
+  (Classe) » (MAX_ROSTER = 400) ; la classe écrite départage les homonymes ; le champ Classe
+  prend la liste de l'élève retrouvé.
 - Photocopies : un original numéroté puis photocopié donne le même n° sur toutes les copies.
   À la correction, une page déjà présente dans la copie de ce n° ouvre une nouvelle copie
   (regroupement dans l'ordre) avec une alerte, au lieu de remplacer la page. Alertes d'ordre

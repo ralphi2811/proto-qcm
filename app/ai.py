@@ -335,7 +335,7 @@ def _api_error(res: httpx.Response) -> str:
 
 # ------------------------------------------------------------ lecture des noms
 
-MAX_ROSTER = 80
+MAX_ROSTER = 400  # toutes les classes de l'enseignant (détection automatique de la classe)
 NAME_FIELDS = ("nom", "prenom", "classe")
 
 NAMES_SYSTEM = """Tu lis l'écriture manuscrite d'élèves (souvent des enfants) dans le cartouche d'une copie.
@@ -345,6 +345,9 @@ Si une liste de classe est fournie, indique dans roster_index le numéro (à par
 qui correspond à ce qui est écrit, en tolérant les fautes d'orthographe, les lettres mal formées,
 l'inversion nom/prénom ou un prénom seul s'il est unique dans la liste ; -1 si aucun ne correspond
 de façon convaincante. Ne choisis jamais un élève au hasard.
+La liste peut regrouper plusieurs classes, la classe de chaque élève étant indiquée entre
+parenthèses : sers-toi aussi de la classe écrite sur la copie (« CM2B », « cm2 b »…) pour
+départager des élèves aux noms proches ; un prénom seul n'est alors unique qu'au sein de cette classe.
 confidence : "high" si la lecture (ou la correspondance) ne fait aucun doute, "medium" si probable,
 "low" sinon. Réponds uniquement en JSON."""
 

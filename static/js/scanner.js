@@ -45,10 +45,23 @@ export function renderScanner(view) {
   // ---- listes de classe et lecture des noms par l'IA
   const prefs = loadPref(SCAN_PREFS);
   const rosterNames = Object.keys(store.rosters());
+  const AUTO = '*';
+  // par défaut : détection automatique dès qu'il existe des listes
+  const chosen = prefs.roster === '' ? '' : rosterNames.includes(prefs.roster) || prefs.roster === AUTO ? prefs.roster : rosterNames.length ? AUTO : '';
   const rosterSel = h('select', { onchange: () => savePref(SCAN_PREFS, { roster: rosterSel.value }) },
-    h('option', { value: '' }, 'Aucune'),
-    rosterNames.map((n) => h('option', { value: n, selected: n === prefs.roster }, n)),
+    h('option', { value: '', selected: chosen === '' }, 'Aucune'),
+    rosterNames.length > 1 ? h('option', { value: AUTO, selected: chosen === AUTO }, 'Automatique (d\'après la classe écrite)') : null,
+    rosterNames.map((n) => h('option', { value: n, selected: n === chosen || (rosterNames.length === 1 && chosen === AUTO) }, n)),
   );
+  /** Élèves de la liste choisie, chacun avec sa classe ; en automatique, toutes les listes. */
+  const currentRoster = () => {
+    const v = rosterSel.value;
+    if (!v) return null;
+    const names = v === AUTO ? rosterNames : [v];
+    const students = names.flatMap((n) => (store.getRoster(n) ?? []).map((st) => ({ ...st, classe: n })));
+    const multi = names.length > 1;
+    return { name: multi ? null : v, multi, students, label: (st) => store.studentLabel(st) + (multi ? ` (${st.classe})` : '') };
+  };
   const readNames = h('input', { type: 'checkbox', checked: prefs.readNames !== false, onchange: () => savePref(SCAN_PREFS, { readNames: readNames.checked }) });
   const codeInput = h('input', {
     type: 'password', autocomplete: 'off', placeholder: "Code d'accès IA", value: loadPref(AI_PREFS).code || '',
@@ -70,13 +83,13 @@ export function renderScanner(view) {
 
   const limit = limiter(3);
   const ctx = {
-    roster: () => (rosterSel.value ? { name: rosterSel.value, students: store.getRoster(rosterSel.value) ?? [] } : null),
+    roster: currentRoster,
     canRead: () => !!(aiStatus?.enabled && readNames.checked),
     /** Lit le cartouche ; renvoie { nom, prenom, classe, student?, confidence }. */
     read: (fields, roster) => limit(async () => {
       const body = {
         fields: Object.fromEntries(Object.entries(fields).map(([k, f]) => [k, f.jpeg])),
-        roster: roster ? roster.students.map(store.studentLabel) : [],
+        roster: roster ? roster.students.map(roster.label) : [],
       };
       const code = codeInput.value;
       const res = await (await api('/api/ai/read-names', {
@@ -353,7 +366,7 @@ class Copy {
     // l'écriture de l'élève (recadrée par le serveur) à côté de chaque champ
     const roster = this.ctx.roster();
     const list = roster ? h('datalist', { id: `roster-${Math.random().toString(36).slice(2)}` },
-      roster.students.map((st) => h('option', { value: store.studentLabel(st) }))) : null;
+      roster.students.map((st) => h('option', { value: roster.label(st) }))) : null;
     this.identBox.replaceChildren(...Object.entries(fields).map(([k, f]) => {
       let input = this.ident[k];
       if (!input) {
@@ -378,7 +391,7 @@ class Copy {
   onIdentInput(k) {
     const roster = this.ctx.roster();
     if (k === 'nom' && roster) {
-      const st = roster.students.find((s) => store.studentLabel(s) === this.ident.nom.value);
+      const st = roster.students.find((s) => roster.label(s) === this.ident.nom.value);
       if (st) this.setStudent(st, roster);
     }
     this.renderIdentStatus();
@@ -388,7 +401,7 @@ class Copy {
     const set = (k, v) => { if (this.ident[k]) this.ident[k].value = v; };
     set('nom', st.nom);
     set('prenom', st.prenom);
-    if (roster && (!this.ident.classe?.value || !this.touched.has('classe'))) set('classe', roster.name);
+    if (st.classe && (!this.ident.classe?.value || !this.touched.has('classe'))) set('classe', st.classe);
     this.match = { student: st, confidence: 'high' };
   }
 
@@ -422,9 +435,10 @@ class Copy {
     if (this.reading) tags.push(h('span', { class: 'tag' }, h('span', { class: 'spinner small' }), ' Lecture du nom…'));
     else if (this.readError) tags.push(h('span', { class: 'tag error', title: this.readError }, `Lecture du nom impossible : ${this.readError}`));
     else if (m?.student && !this.touched.size) {
+      const cls = m.student.classe ? ` · ${m.student.classe}` : '';
       tags.push(m.confidence === 'high'
-        ? h('span', { class: 'tag ok' }, '✓ Élève de la liste')
-        : h('span', { class: 'tag warn' }, 'Élève de la liste probable : à vérifier'));
+        ? h('span', { class: 'tag ok' }, `✓ Élève de la liste${cls}`)
+        : h('span', { class: 'tag warn' }, `Élève de la liste probable${cls} : à vérifier`));
     } else if (m && !this.touched.size) {
       tags.push(h('span', { class: 'tag warn' }, m.roster ? 'Nom absent de la liste : à vérifier' : 'Lu par l\'IA : à vérifier'));
     }
