@@ -102,5 +102,13 @@ store.settings(); // crée la clé au premier lancement
 route();
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
+  // nouvelle version déployée : le service worker a été remplacé pendant que la page était ouverte
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => toast(
+      h('span', {}, 'Nouvelle version installée. ',
+        h('button', { class: 'btn small', onclick: () => location.reload() }, 'Recharger')),
+      'ok', 20000,
+    ), { once: true });
+  }
 }

@@ -257,6 +257,7 @@ input:focus, select:focus, .rich:focus { outline: 2px solid color-mix(in srgb, v
 .toast.ok { background: #15803d; }
 .toast.error { background: #b91c1c; }
 .toast.warn { background: #b45309; }
+.toast .btn { pointer-events: auto; margin-left: 6px; }
 .toast.out { opacity: 0; transform: translateY(8px); }
 
 /* ---------- génération IA ---------- */

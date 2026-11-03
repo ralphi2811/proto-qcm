@@ -1,6 +1,6 @@
 [project]
 name = "proto-qcm"
-version = "0.2.0"
+version = "0.2.1"
 description = "Générateur de QCM imprimables + correction OMR par smartphone (POC)"
 requires-python = ">=3.11"
 dependencies = [

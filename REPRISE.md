@@ -146,6 +146,9 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
 - `app/omr.py` : lecture optique ; `app/render.py` + `app/templates/exam.html` : PDF
 - `static/js/` : editor, scanner, results, settings, store, ui ; `static/sw.js` (le nom du
   cache `qcm-__BUILD_ID__` est remplacé par `/sw.js` côté serveur : version-commit)
+- **Cloudflare** réécrit `Cache-Control` en `max-age=14400` (Browser Cache TTL de la zone) : le
+  service worker revalide donc tout avec `cache: 'no-cache'` (sinon ancienne interface pendant 4 h)
+  et `app.js` affiche « Nouvelle version installée · Recharger » au remplacement du SW.
 - `app/version.py` : version (`APP_VERSION`/`APP_COMMIT`/`APP_BUILT` fournis par la CI, sinon
   pyproject) exposée par `/healthz` et `/api/health`, affichée en bas des Réglages
 - `tests/test_pipeline.py` : génère une copie, simule une photo dégradée, la relit

@@ -8,8 +8,14 @@ const SHELL = [
   '/icons/icon.svg', '/icons/icon-192.png', '/icons/icon-512.png',
 ];
 
+// Cloudflare réécrit Cache-Control (max-age de plusieurs heures) : sans cela le navigateur
+// resservirait l'ancienne interface depuis son cache HTTP. On revalide donc toujours (304 si inchangé).
+const fresh = (req) => (typeof req !== 'string' && req.mode === 'navigate'
+  ? new Request(req.url, { cache: 'no-cache' }) // une navigation ne se recopie pas avec options
+  : new Request(req, { cache: 'no-cache' }));
+
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map(fresh))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -24,7 +30,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   e.respondWith(
-    fetch(e.request)
+    fetch(fresh(e.request))
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();
