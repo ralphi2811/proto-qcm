@@ -32,8 +32,8 @@ def test_layout_counts_pages():
     r = client.post("/api/layout", json={"exam": exam.model_dump(), "box_size": "large"})
     assert r.status_code == 200
     pages = r.json()["pages"]
-    assert set(pages) == {"large", "normal", "compact"}
-    assert pages["large"] >= pages["normal"] >= pages["compact"] >= 1
+    assert set(pages) == {"large", "normal", "compact", "dense"}
+    assert pages["large"] >= pages["normal"] >= pages["compact"] >= pages["dense"] >= 1
 
 
 def test_scan_pdf_streams_each_page():

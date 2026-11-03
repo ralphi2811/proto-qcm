@@ -76,6 +76,8 @@ NAME_FIELDS = {  # clé -> (libellé, x, y, l, h) de la zone d'écriture
     for i, (key, label) in enumerate([("nom", "Nom"), ("prenom", "Prénom"), ("classe", "Classe")])
 }
 
+NAME_GUIDE_MM = 1.2  # ligne d'écriture claire, à cette distance du bas de chaque cadre
+
 # Bandeau d'aide (exemples « coche / n'entoure pas ») entre le cartouche et la grille
 HELP_TOP = NAME_BOX[1] + NAME_BOX[3] + 3.0
 HELP_H = 10.0

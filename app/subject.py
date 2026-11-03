@@ -28,7 +28,7 @@ from .payload import b45decode, b45encode, parse_blob
 PX_MM = 25.4 / 96  # px CSS -> mm
 
 # Marges de la zone de contenu : le haut de chaque page est réservé au QR et au cartouche
-MARGIN_TOP = sheet.NAME_BOX[1] + sheet.NAME_BOX[3] + 4.0
+MARGIN_TOP = sheet.NAME_BOX[1] + sheet.NAME_BOX[3] + 3.0
 MARGIN_SIDE = sheet.INNER_LEFT
 MARGIN_BOTTOM = sheet.PAGE_H - sheet.INNER_BOTTOM
 
@@ -40,6 +40,8 @@ DENSITIES = {
     "large": {"font_pt": 13.0, "q_gap": 6.5, "opts_top": 2.5, "row_gap": 4.0, "col_gap": 5.0, "help_pt": 11.0},
     "normal": {"font_pt": 11.5, "q_gap": 5.0, "opts_top": 2.0, "row_gap": 3.5, "col_gap": 5.0, "help_pt": 10.0},
     "compact": {"font_pt": 10.0, "q_gap": 3.2, "opts_top": 1.3, "row_gap": OPT_GAP, "col_gap": 4.0, "help_pt": 9.0, "line_height": 1.22},
+    # « très petite » : environ 20 questions courtes sur une page
+    "dense": {"font_pt": 9.5, "q_gap": 1.9, "opts_top": 0.7, "row_gap": OPT_GAP, "col_gap": 4.0, "help_pt": 8.5, "help_img": 5.5, "line_height": 1.15},
 }
 LINE_HEIGHT = 1.3
 PT_MM = 25.4 / 72
@@ -97,6 +99,11 @@ def option_columns(options, font_pt: float = 11.5, col_gap: float = 5.0, box: fl
     return min(k for k in range(1, best + 1) if -(-n // k) == rows)
 
 
+def show_points(exam) -> bool:
+    """Points affichés au bout de chaque question seulement s'ils diffèrent d'une question à l'autre."""
+    return len({q.points for q in exam.questions}) > 1
+
+
 # --------------------------------------------------------------------- passe 1
 
 
@@ -148,6 +155,13 @@ def _text(x, y, s, size, weight="normal", anchor="start", fill="#222"):
             f'font-weight="{weight}" text-anchor="{anchor}" fill="{fill}">{escape(s)}</text>')
 
 
+def _field(x, y, w, h) -> str:
+    """Cadre d'écriture, avec une ligne claire près du bas pour que l'élève n'écrive pas sur le bord."""
+    gy = y + h - sheet.NAME_GUIDE_MM
+    return (f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="0.8" fill="none" stroke="#999" stroke-width="0.25"/>'
+            f'<line x1="{x + 1.5}" y1="{gy:.2f}" x2="{x + w - 1.5}" y2="{gy:.2f}" stroke="#c8c8c8" stroke-width="0.2"/>')
+
+
 def page_background(qr_text: str, title: str, page: int, n_pages: int, copy: int, exam_id: str) -> str:
     S = sheet
     parts = []
@@ -165,11 +179,11 @@ def page_background(qr_text: str, title: str, page: int, n_pages: int, copy: int
         parts.append(_text(nx + nw - 3, ny + 5.0, "écrire en MAJUSCULES dans les cadres", 2.5, anchor="end", fill="#555"))
         for key, (label, fx, fy, fw, fh) in S.NAME_FIELDS.items():
             parts.append(_text(nx + 3, fy + fh / 2 + 1.2, label, 3.2))
-            parts.append(f'<rect x="{fx}" y="{fy}" width="{fw}" height="{fh}" rx="0.8" fill="none" stroke="#999" stroke-width="0.25"/>')
+            parts.append(_field(fx, fy, fw, fh))
     else:
         label, fx, fy, fw, fh = S.NAME_FIELDS["nom"]
         parts.append(_text(nx + 3, fy + fh / 2 + 1.2, label, 3.2))
-        parts.append(f'<rect x="{fx}" y="{fy}" width="{fw}" height="{fh}" rx="0.8" fill="none" stroke="#999" stroke-width="0.25"/>')
+        parts.append(_field(fx, fy, fw, fh))
         parts.append(_text(nx + nw / 2, ny + nh - 7, pages_txt.capitalize(), 5, "bold", anchor="middle", fill="#333"))
     parts.append(_text(S.INNER_LEFT, S.FOOTER_Y,
                        f"{title} · {exam_id} · {pages_txt} · ne pas plier, ne pas écrire près des carrés noirs",
@@ -192,6 +206,7 @@ def _ctx(exam, style: int, density: str, examples: dict) -> tuple[dict, float]:
         text_pad=max(0.0, (box - line_mm) / 2),  # centre la 1re ligne de texte sur la case
         box_pad=max(0.0, (line_mm - box) / 2),
         cols=[option_columns(q.options, d["font_pt"], d["col_gap"], box) for q in exam.questions],
+        show_pts=show_points(exam),
         M={"top": MARGIN_TOP, "side": MARGIN_SIDE, "bottom": MARGIN_BOTTOM},
         indent=OPTS_INDENT, text_gap=OPT_TEXT_GAP,
         **examples,

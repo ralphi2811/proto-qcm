@@ -54,6 +54,7 @@
   .nb-hint { position: absolute; font-size: 7pt; color: #555; text-align: right; line-height: 5mm; white-space: nowrap; }
   .nb-label { position: absolute; font-size: 9pt; color: #222; line-height: {{ S.NAME_FIELD_H }}mm; }
   .nb-field { position: absolute; border: 0.25mm solid #999; border-radius: 0.8mm; box-sizing: border-box; }
+  .nb-field::after { content: ""; position: absolute; left: 1.5mm; right: 1.5mm; bottom: {{ S.NAME_GUIDE_MM - 0.25 }}mm; border-bottom: 0.2mm solid #c8c8c8; }
   .foot { position: absolute; font-size: 6.5pt; color: #777; }
 </style>
 </head>
@@ -71,7 +72,7 @@
     <div class="q-head">
       <div class="q-num">{{ loop.index }}.</div>
       <div class="q-body">{{ q.html|clean|safe }}</div>
-      <div class="q-pts">{{ '%g'|format(q.points) }} pt{{ 's' if q.points > 1 else '' }}</div>
+      {% if show_pts %}<div class="q-pts">{{ '%g'|format(q.points) }} pt{{ 's' if q.points > 1 else '' }}</div>{% endif %}
     </div>
     <ul class="opts">
       {% for o in q.options %}

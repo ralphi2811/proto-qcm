@@ -17,7 +17,7 @@
   .copy + .copy { break-before: page; }
 
   .help { display: flex; align-items: center; gap: 3mm; white-space: nowrap; font-size: {{ D.help_pt }}pt; margin-bottom: {{ D.q_gap * 0.6 }}mm; }
-  .help img { height: 7mm; display: block; }
+  .help img { height: {{ D.help_img or 7 }}mm; display: block; }
   .help .sep { width: 6mm; }
   .help .subtitle { margin-left: auto; color: #333; font-weight: bold; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .instructions { margin: 0 0 {{ D.q_gap }}mm; padding: {{ 1.2 if D.font_pt < 11 else 2 }}mm 3.5mm; background: #f2f2f2; border-radius: 2mm; font-size: 0.9em; }
@@ -62,7 +62,7 @@
     <div class="q-head">
       <div class="q-num">{{ loop.index }}.</div>
       <div class="q-body">{{ q.html|clean|safe }}</div>
-      <div class="q-pts">{{ '%g'|format(q.points) }} pt{{ 's' if q.points > 1 else '' }}</div>
+      {% if show_pts %}<div class="q-pts">{{ '%g'|format(q.points) }} pt{{ 's' if q.points > 1 else '' }}</div>{% endif %}
     </div>
     <div class="opts" style="grid-template-columns: repeat({{ cols[qi] }}, 1fr)">
       {% for o in q.options %}

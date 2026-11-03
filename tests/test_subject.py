@@ -109,3 +109,41 @@ def test_option_columns():
     assert subject.option_columns(O("Réponse moyenne", "b")) == 2
     assert subject.option_columns(O("x" * 50, "b")) == 1
     assert subject.option_columns(O('<img src="data:x">', "b")) == 2
+
+
+def test_dense_twenty_questions_one_page():
+    """« Très petite » : 20 questions courtes sur une page, réponses alignées en colonnes,
+    et la page se lit toujours."""
+    qs = []
+    for i in range(20):
+        if i % 4 == 0:
+            q, opts = f"{i + 1}/4 + 1/4 = ?", [f"{j}/4" for j in range(4)]  # tout sur une ligne
+        elif i == 1:  # trop longues pour 4 colonnes : 2 colonnes, sur les mêmes bords
+            q, opts = "Quelle fraction représente la moitié d'un gâteau ?", ["Un demi du gâteau", "Un quart", "Trois quarts", "Un tiers"]
+        else:
+            q, opts = "Parmi ces fractions, laquelle est égale à la fraction trois quarts ?", ["6/8", "3/5", "4/3", "9/16"]
+        qs.append({"html": q, "options": [{"html": o} for o in opts]})
+    exam = ExamIn(title="Vingt questions", questions=qs)
+    ctx, box = subject._ctx(exam, sheet.STANDARD, "dense", EX)
+    assert set(ctx["cols"]) == {2, 4}  # 4 colonnes, ou 2 (alignées sur les mêmes bords)
+    assert not ctx["show_pts"]
+    blob = bytes([1, 20, 4, sheet.STANDARD]) + os.urandom(4) + os.urandom(12) + os.urandom(24)
+    req = PdfRequest(exam=exam, qr=b45encode(blob), mode="subject", density="dense")
+    per_page = subject.layout_pages(req, env, EX, _FETCHER)
+    assert len(per_page) == 1
+    assert len({round(cx, 1) for (*_r, cx, _cy, _w) in per_page[0]}) == 4  # cases alignées sur 4 colonnes
+    doc = pdfium.PdfDocument(render_pdf(req))
+    img = cv2.cvtColor(doc[0].render(scale=DPI / 72).to_numpy(), cv2.COLOR_RGB2GRAY)
+    expect_marked, expect_circled = set(), set()
+    for _, q, o, cx, cy, w in per_page[0]:
+        if o == q % 4:
+            [check, cross, fill][q % 3](img, _box(cx, cy, w))
+            expect_marked.add((q, o))
+        elif o == (q + 2) % 4 and q % 5 == 3:
+            circle(img, _box(cx, cy, w), 1.0)
+            expect_circled.add((q, o))
+    res = omr.scan(photograph(img, angle=4, seed=3), preview=False)
+    st = states(res)
+    assert len(st) == 80
+    assert {k for k, c in st.items() if c["state"] == "marked"} == expect_marked
+    assert {k for k, c in st.items() if c["circled"]} == expect_circled

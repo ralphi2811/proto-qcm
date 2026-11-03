@@ -100,9 +100,11 @@ déchiffre le QR avec sa clé, note, enregistre localement
     automatiquement, dans n'importe quel ordre) ou **non numérotés** pour photocopier
     (pages regroupées dans l'ordre des photos) ;
   - **grille séparée** : le sujet + une grille de réponses (utile pour les longs QCM).
-- **Taille du texte** (Grande / Moyenne / Petite) indépendante de la taille des cases ;
+- **Taille du texte** (Grande / Moyenne / Petite / Très petite ≈ 20 questions courtes par page) indépendante de la taille des cases ;
   l'éditeur affiche le nombre de pages du sujet (calculé sur la vraie mise en page) et
   propose la taille qui fait gagner une page.
+- **Deux modèles A / B** : option du PDF, questions mélangées dans le sujet B (QR propre à chaque
+  modèle) ; à la correction, réponses remises dans l'ordre de l'éditeur.
 - 4 repères carrés aux coins + le QR en haut à gauche, qui donne l'orientation (photo à
   l'envers ou pivotée de 90° OK).
 - **QR code** : correction d'erreur niveau H (~30 % de la surface récupérable), données en

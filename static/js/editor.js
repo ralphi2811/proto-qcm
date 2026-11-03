@@ -4,7 +4,7 @@ import { openAiDialog } from './ai.js';
 import { h, icon, toast, modal, download, api, confirmDanger, setChildren } from './ui.js';
 
 const MAX_OPTIONS = 8;
-const DENSITIES = [['large', 'Grande'], ['normal', 'Moyenne'], ['compact', 'Petite']];
+const DENSITIES = [['large', 'Grande'], ['normal', 'Moyenne'], ['compact', 'Petite'], ['dense', 'Très petite']];
 const densityName = (d) => (DENSITIES.find(([k]) => k === d) || DENSITIES[1])[1];
 
 /** Le QCM tel qu'envoyé au serveur : sans les bonnes réponses. */
@@ -352,15 +352,36 @@ function validate(exam) {
   return problems;
 }
 
-async function buildPdf(exam, opts) {
-  const { qr, examId } = await encryptExam(exam, store.currentKey());
+/** Ordre mélangé des questions (modèle B) : jamais l'ordre d'origine, le moins de questions restées à leur place. */
+function shuffledOrder(n) {
+  let best = null, bestFixed = Infinity;
+  for (let t = 0; t < 30 && bestFixed > 0; t++) {
+    const o = [...Array(n).keys()];
+    for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [o[i], o[j]] = [o[j], o[i]]; }
+    const fixed = o.filter((v, i) => v === i).length;
+    if (fixed < bestFixed && fixed < n) { best = o; bestFixed = fixed; }
+  }
+  return best ?? [...Array(n).keys()];
+}
+
+/**
+ * variant : { label: 'A' | 'B', order } — order[i] = question d'origine imprimée en position i.
+ * Le QR du modèle porte le corrigé dans l'ordre imprimé ; l'ordre est gardé avec le QCM pour
+ * remettre les réponses dans l'ordre d'origine à la correction.
+ */
+async function buildPdf(exam, opts, variant = null) {
+  const printed = variant
+    ? { ...exam, title: `Sujet ${variant.label} — ${exam.title}`, questions: variant.order.map((i) => exam.questions[i]) }
+    : exam;
+  const { qr, examId } = await encryptExam(printed, store.currentKey());
   const body = {
     qr, ...opts,
-    exam: serverExam(exam), // le corrigé n'est PAS envoyé : il n'existe que chiffré dans le QR
+    exam: serverExam(printed), // le corrigé n'est PAS envoyé : il n'existe que chiffré dans le QR
   };
   const res = await api('/api/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const blob = await res.blob();
   exam.qrIds = [...new Set([...(exam.qrIds || []), examId])];
+  if (variant) exam.variants = { ...exam.variants, [examId]: variant };
   store.saveExam(exam);
   return blob;
 }
@@ -407,6 +428,18 @@ function pdfDialog(exam, onDensity = () => {}) {
   copies.addEventListener('input', () => { numbered.checked = Number(copies.value) > 1; syncCopies(); });
   numbered.addEventListener('change', syncCopies);
   syncCopies();
+  // deux modèles : A dans l'ordre de l'éditeur, B mélangé (même ordre pour l'aperçu et le téléchargement)
+  const nQ = exam.questions.length;
+  const twoModels = h('input', { type: 'checkbox', checked: !!exam.lastTwoModels && nQ > 1, disabled: nQ < 2 });
+  const orderB = shuffledOrder(nQ);
+  const modelsHint = h('p', { class: 'muted small' });
+  const syncModels = () => {
+    modelsHint.textContent = twoModels.checked
+      ? 'Deux PDF : sujet A (ordre de l\'éditeur) et sujet B (questions mélangées), chacun avec son QR. Distribuez-les en alternance ; la correction reconnaît le modèle toute seule et range les réponses dans l\'ordre de l\'éditeur.'
+      : '';
+  };
+  twoModels.addEventListener('change', syncModels);
+  syncModels();
   // mode grille
   const subject = h('input', { type: 'checkbox', checked: true });
   const sheets = h('input', { type: 'number', min: 0, max: 200, value: 1 });
@@ -419,16 +452,25 @@ function pdfDialog(exam, onDensity = () => {}) {
         ? { mode: 'subject', copies: Math.max(1, Number(copies.value) || 1), numbered: numbered.checked, density: exam.density || 'normal' }
         : { mode: 'grid', subject: subject.checked, sheets: Number(sheets.value) || 0 };
       if (onSubject) exam.lastCopies = opts.copies;
-      const blob = await buildPdf(exam, opts);
+      exam.lastTwoModels = twoModels.checked;
+      const variants = twoModels.checked
+        ? [{ label: 'A', order: [...Array(nQ).keys()] }, { label: 'B', order: orderB }]
+        : [null];
+      const pdfs = [];
+      for (const v of variants) pdfs.push({ v, blob: await buildPdf(exam, opts, v) });
+      const name = (v) => `${exam.title || 'qcm'}${v ? ` - sujet ${v.label}` : ''}.pdf`;
       if (action === 'download') {
-        download(blob, `${exam.title || 'qcm'}.pdf`);
-        out.replaceChildren(h('p', { class: 'ok' }, 'PDF téléchargé.'));
+        pdfs.forEach(({ v, blob }) => download(blob, name(v)));
+        out.replaceChildren(h('p', { class: 'ok' }, pdfs.length > 1 ? 'PDF des sujets A et B téléchargés.' : 'PDF téléchargé.'));
       } else {
-        const url = URL.createObjectURL(blob);
-        out.replaceChildren(
-          h('iframe', { src: url, class: 'pdf-frame', title: 'Aperçu du PDF' }),
-          h('p', {}, h('a', { href: url, target: '_blank', rel: 'noopener' }, 'Ouvrir dans un nouvel onglet')),
-        );
+        out.replaceChildren(...pdfs.flatMap(({ v, blob }) => {
+          const url = URL.createObjectURL(blob);
+          return [
+            v ? h('h3', {}, `Sujet ${v.label}`) : null,
+            h('iframe', { src: url, class: 'pdf-frame', title: `Aperçu du PDF${v ? ` (sujet ${v.label})` : ''}` }),
+            h('p', {}, h('a', { href: url, target: '_blank', rel: 'noopener' }, 'Ouvrir dans un nouvel onglet')),
+          ];
+        }));
       }
     } catch (e) { out.replaceChildren(h('p', { class: 'error' }, e.message)); }
   };
@@ -446,6 +488,8 @@ function pdfDialog(exam, onDensity = () => {}) {
           h('label', { class: 'check' }, subject, 'Inclure le sujet'),
           h('label', { class: 'field inline' }, h('span', {}, 'Grilles de réponses'), sheets),
         ),
+    h('label', { class: 'check' }, twoModels, 'Deux modèles (A / B) : ordre des questions mélangé'),
+    modelsHint,
     h('p', { class: 'muted small' },
       'Le corrigé est chiffré dans le QR code au moment de la génération : si vous modifiez les bonnes réponses ensuite, réimprimez.'),
     h('div', { class: 'row' },

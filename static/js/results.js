@@ -7,17 +7,17 @@ const fmt = (r) => (r.note != null ? `${r.note} / ${r.noteSur}` : `${r.total} / 
 
 function toCsv(rows) {
   const n = Math.max(0, ...rows.map((r) => r.details.length));
-  const head = ['QCM', 'Nom', 'Prénom', 'Classe', 'Date', 'Points', 'Max', 'Note', 'Sur', ...Array.from({ length: n }, (_, i) => `Q${i + 1}`)];
+  const head = ['QCM', 'Sujet', 'Nom', 'Prénom', 'Classe', 'Date', 'Points', 'Max', 'Note', 'Sur', ...Array.from({ length: n }, (_, i) => `Q${i + 1}`)];
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = rows.map((r) => [
-    r.examTitle, r.nom, r.prenom, r.classe, new Date(r.date).toLocaleString('fr-FR'), r.total, r.max, r.note ?? '', r.noteSur ?? '',
+    r.examTitle, r.variant ?? '', r.nom, r.prenom, r.classe, new Date(r.date).toLocaleString('fr-FR'), r.total, r.max, r.note ?? '', r.noteSur ?? '',
     ...r.details.map((d) => d.marked.map((m, i) => (m ? L(i) : '')).join('')),
   ].map(esc).join(';'));
   return '﻿' + [head.map(esc).join(';'), ...lines].join('\r\n');
 }
 
 function detail(r) {
-  modal(`${who(r) || 'Copie'} — ${fmt(r)}`, h('table', { class: 'table' },
+  modal(`${who(r) || 'Copie'}${r.variant ? ` (sujet ${r.variant})` : ''} — ${fmt(r)}`, h('table', { class: 'table' },
     h('thead', {}, h('tr', {}, h('th', {}, 'Q'), h('th', {}, 'Cochées'), h('th', {}, 'Attendues'), h('th', {}, 'Points'))),
     h('tbody', {}, r.details.map((d, i) => {
       const got = d.marked.map((m, k) => (m ? L(k) : '')).join('') || '—';

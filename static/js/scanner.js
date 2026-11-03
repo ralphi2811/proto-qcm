@@ -292,7 +292,8 @@ class Copy {
   constructor({ key, localExam, source, ctx, copyNo, nPages, onClose }) {
     Object.assign(this, { key, localExam, source, ctx, copyNo, nPages, onClose });
     this.examId = key.examId;
-    this.title = localExam?.title || `QCM ${key.examId ?? ''}`;
+    this.variant = localExam?.variants?.[key.examId] ?? null; // modèle A/B : ordre des questions imprimé
+    this.title = (localExam?.title || `QCM ${key.examId ?? ''}`) + (this.variant ? ` · sujet ${this.variant.label}` : '');
     this.pages = new Map(); // n° de page -> { scan, canvas, img }
     this.marks = new Map(); // "q:o" -> bool
     this.overridden = new Set();
@@ -541,6 +542,15 @@ class Copy {
     this.update();
   }
 
+  /** Détail par question remis dans l'ordre de l'éditeur (modèle B : questions mélangées à l'impression). */
+  originalOrder(details) {
+    const order = this.variant?.order;
+    if (!order || order.length !== details.length) return details;
+    const out = [];
+    order.forEach((orig, i) => { out[orig] = details[i]; });
+    return out;
+  }
+
   async save() {
     const missing = this.missingPages();
     if (missing.length && !(await ask({
@@ -552,10 +562,11 @@ class Copy {
     const id = this.identity();
     store.addResult({
       id: store.uid(), date: Date.now(),
-      examId: this.examId ?? null, examTitle: this.title, copyNo: this.copyNo || null,
+      examId: this.examId ?? null, examTitle: this.localExam?.title || this.title, copyNo: this.copyNo || null,
+      variant: this.variant?.label ?? null,
       ...id,
       total: r.total, max: r.max, note: r.note, noteSur: r.noteSur,
-      details: r.details.map((d) => ({ marked: d.marked, correct: d.correct, points: d.points, max: d.max })),
+      details: this.originalOrder(r.details).map((d) => ({ marked: d.marked, correct: d.correct, points: d.points, max: d.max })),
       corrections: this.overridden.size,
       pages: { received: this.pages.size, total: this.nPages },
     });

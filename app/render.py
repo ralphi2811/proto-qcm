@@ -48,7 +48,7 @@ class PdfRequest(BaseModel):
     sheets: int = Field(default=1, ge=0, le=200)
     # mode « subject » : réponses cochées sur le sujet
     copies: int = Field(default=1, ge=1, le=200)
-    density: Literal["compact", "normal", "large"] = "normal"  # taille du texte
+    density: Literal["dense", "compact", "normal", "large"] = "normal"  # taille du texte
     numbered: bool = False  # exemplaires numérotés (regroupement automatique des pages)
 
 
@@ -99,6 +99,7 @@ def render_html(req: PdfRequest) -> str:
         qr_uri=qr_data_uri(req.qr),
         exam_id=header.exam_id,
         large=style == sheet.LARGE,
+        show_pts=subject.show_points(exam),
         check_svg=_EXAMPLE_CHECK,
         circle_svg=_EXAMPLE_CIRCLE,
     )

@@ -117,6 +117,18 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
   qui tient, en tenant compte de la taille du texte. Sous-titre placé sur la ligne des
   exemples. QCM histoire CM2 de 10 questions : 2 pages → 1 page (89 %) en Petite.
 
+- **Très petite** (2026-11-03) : densité `dense` (9,5 pt, pas de 11,1 mm par question
+  courte), en-tête resserré, pictogrammes d'aide plus petits. Réponses toujours en colonnes
+  égales (4, 3, 2 ou 1 : les bords tombent au même endroit d'une question à l'autre). Essayé
+  puis retiré à la demande : énoncé + réponses sur une ligne, réponses à largeur naturelle
+  (gagnaient de la place mais cassaient l'alignement). « 1 pt » masqué si toutes les questions
+  valent pareil (`subject.show_points`). 20 questions « 1 ligne + 4 réponses courtes » = 1 page ;
+  énoncés de 2 lignes + réponses de ~20 caractères : ~11 par page.
+- **Modèles A/B** (2026-11-03) : `exam.variants[examId] = {label, order}` (local, pas dans le QR,
+  le QR du modèle B porte déjà le corrigé dans l'ordre imprimé). `Copy.originalOrder` remet le
+  détail dans l'ordre de l'éditeur à l'enregistrement ; résultat `variant`, colonne CSV « Sujet ».
+- **Ligne d'écriture** dans les cadres du cartouche (`sheet.NAME_GUIDE_MM`).
+
 ## Fichiers clés
 - `app/sheet.py` : géométrie de la grille, utilisée par le PDF **et** par l'OMR (à modifier ici uniquement)
 - `app/payload.py` / `static/js/crypto.js` : format du QR (les deux doivent rester synchronisés)
