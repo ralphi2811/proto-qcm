@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { encryptExam } from './crypto.js';
+import { encryptExam, newGroupId } from './crypto.js';
 import { openAiDialog } from './ai.js';
 import { h, icon, toast, modal, download, api, confirmDanger, setChildren } from './ui.js';
 
@@ -366,14 +366,15 @@ function shuffledOrder(n) {
 
 /**
  * variant : { label: 'A' | 'B', order } — order[i] = question d'origine imprimée en position i.
- * Le QR du modèle porte le corrigé dans l'ordre imprimé ; l'ordre est gardé avec le QCM pour
- * remettre les réponses dans l'ordre d'origine à la correction.
+ * Le QR du modèle porte le corrigé dans l'ordre imprimé, ainsi que la lettre, le groupe A/B et
+ * l'ordre : la correction remet les réponses dans l'ordre d'origine, même sur un appareil qui n'a
+ * pas ce QCM (copie aussi gardée avec le QCM local).
  */
 async function buildPdf(exam, opts, variant = null) {
   const printed = variant
     ? { ...exam, title: `Sujet ${variant.label} — ${exam.title}`, questions: variant.order.map((i) => exam.questions[i]) }
     : exam;
-  const { qr, examId } = await encryptExam(printed, store.currentKey());
+  const { qr, examId } = await encryptExam(printed, store.currentKey(), variant);
   const body = {
     qr, ...opts,
     exam: serverExam(printed), // le corrigé n'est PAS envoyé : il n'existe que chiffré dans le QR
@@ -453,8 +454,9 @@ function pdfDialog(exam, onDensity = () => {}) {
         : { mode: 'grid', subject: subject.checked, sheets: Number(sheets.value) || 0 };
       if (onSubject) exam.lastCopies = opts.copies;
       exam.lastTwoModels = twoModels.checked;
+      const group = newGroupId();
       const variants = twoModels.checked
-        ? [{ label: 'A', order: [...Array(nQ).keys()] }, { label: 'B', order: orderB }]
+        ? [{ label: 'A', group, order: [...Array(nQ).keys()] }, { label: 'B', group, order: orderB }]
         : [null];
       const pdfs = [];
       for (const v of variants) pdfs.push({ v, blob: await buildPdf(exam, opts, v) });

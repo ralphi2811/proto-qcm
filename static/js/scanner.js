@@ -107,9 +107,10 @@ export function renderScanner(view) {
       const who = norm(`${copy.ident.nom?.value} ${copy.ident.prenom?.value}`);
       if (!who) return null;
       const ids = new Set([copy.examId, ...(copy.localExam?.qrIds || [])]);
-      const saved = store.listResults().find((r) => ids.has(r.examId) && norm(`${r.nom} ${r.prenom}`) === who);
+      const sameExam = (examId, group) => ids.has(examId) || (!!copy.group && group === copy.group); // A et B comptent ensemble
+      const saved = store.listResults().find((r) => sameExam(r.examId, r.group) && norm(`${r.nom} ${r.prenom}`) === who);
       if (saved) return `déjà corrigé (${saved.note ?? saved.total}/${saved.noteSur ?? ''})`;
-      const other = copies.find((c) => c !== copy && !c.saved && !c.discarded && c.examId === copy.examId
+      const other = copies.find((c) => c !== copy && !c.saved && !c.discarded && sameExam(c.examId, c.group)
         && norm(`${c.ident.nom?.value} ${c.ident.prenom?.value}`) === who);
       return other ? 'même nom sur une autre copie en cours' : null;
     },
@@ -395,8 +396,12 @@ class Copy {
   constructor({ key, localExam, source, ctx, copyNo, nPages, onClose }) {
     Object.assign(this, { key, localExam, source, ctx, copyNo, nPages, onClose });
     this.examId = key.examId;
-    this.variant = localExam?.variants?.[key.examId] ?? null; // modèle A/B : ordre des questions imprimé
-    this.title = (localExam?.title || `QCM ${key.examId ?? ''}`) + (this.variant ? ` · sujet ${this.variant.label}` : '');
+    // modèle A/B : ordre des questions imprimé, lu dans le QR (ou gardé avec le QCM local)
+    this.variant = key.variant ?? localExam?.variants?.[key.examId] ?? null;
+    this.group = this.variant?.group ?? null; // relie les copies A et B d'un même QCM
+    // sans le QCM local, A et B portent le même nom (groupe) : rangés ensemble dans Résultats
+    this.examTitle = localExam?.title || `QCM ${this.group ?? key.examId ?? ''}`;
+    this.title = this.examTitle + (this.variant ? ` · sujet ${this.variant.label}` : '');
     this.pages = new Map(); // n° de page -> { scan, canvas, img }
     this.marks = new Map(); // "q:o" -> bool
     this.overridden = new Set();
@@ -703,8 +708,8 @@ class Copy {
     const id = this.identity();
     store.addResult({
       id: store.uid(), date: Date.now(),
-      examId: this.examId ?? null, examTitle: this.localExam?.title || this.title, copyNo: this.copyNo || null,
-      variant: this.variant?.label ?? null,
+      examId: this.examId ?? null, examTitle: this.examTitle, copyNo: this.copyNo || null,
+      variant: this.variant?.label ?? null, group: this.group,
       ...id,
       total: r.total, max: r.max, note: r.note, noteSur: r.noteSur,
       details: this.originalOrder(r.details).map((d) => ({ marked: d.marked, correct: d.correct, points: d.points, max: d.max })),

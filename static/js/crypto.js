@@ -5,6 +5,8 @@
 //   [mode, noteSur, flags] + cases correctes (nbOptMax bits / question)
 //   + (flags&1) points*2 sur 1 o / question
 //   + (flags&2) nb options par question (4 bits / question)
+//   + (flags&4) modèle A/B : lettre (5 bits), ordre mélangé ? (1 bit), groupe commun A/B (32 bits),
+//               puis si mélangé, pour chaque position imprimée la question d'origine (⌈log2 nbQ⌉ bits)
 import { b45encode, b45decode } from './base45.js';
 
 export const VERSION = 1;
@@ -18,6 +20,13 @@ const unhex = (s) => new Uint8Array(s.match(/../g).map((h) => parseInt(h, 16)));
 export function newKeyHex() {
   return hex(crypto.getRandomValues(new Uint8Array(16)));
 }
+
+/** Identifiant commun aux modèles A et B d'un même QCM (relie leurs copies sur un autre appareil). */
+export function newGroupId() {
+  return hex(crypto.getRandomValues(new Uint8Array(4)));
+}
+
+const orderBits = (nQ) => Math.max(1, Math.ceil(Math.log2(nQ)));
 
 export function formatKey(h) {
   return h.toUpperCase().match(/.{4}/g).join('-');
@@ -78,7 +87,11 @@ export function keyFromExam(exam) {
   };
 }
 
-export async function encryptExam(exam, keyHex) {
+/**
+ * variant (facultatif) : { label: 'A' | 'B', group, order } — order[i] = question d'origine imprimée
+ * en position i. Inscrit dans le QR : la copie se corrige et se range sans le QCM local.
+ */
+export async function encryptExam(exam, keyHex, variant = null) {
   const key = keyFromExam(exam);
   const qs = key.questions;
   const nQ = qs.length;
@@ -91,10 +104,18 @@ export async function encryptExam(exam, keyHex) {
   const w = new BitWriter();
   w.write(MODES.indexOf(key.mode), 8);
   w.write(Math.min(255, key.noteSur), 8);
-  w.write((customPoints ? 1 : 0) | (varOpts ? 2 : 0), 8);
+  w.write((customPoints ? 1 : 0) | (varOpts ? 2 : 0) | (variant ? 4 : 0), 8);
   for (const q of qs) for (let o = 0; o < nOpt; o++) w.write(q.correct[o] ? 1 : 0, 1);
   if (customPoints) for (const q of qs) w.write(Math.max(0, Math.min(255, Math.round(q.points * 2))), 8);
   if (varOpts) for (const q of qs) w.write(q.nOpt, 4);
+  if (variant) {
+    const shuffled = variant.order.some((orig, i) => orig !== i);
+    w.write(variant.label.charCodeAt(0) - 65, 5);
+    w.write(shuffled ? 1 : 0, 1);
+    const g = unhex(variant.group);
+    for (const b of g) w.write(b, 8);
+    if (shuffled) for (const orig of variant.order) w.write(orig, orderBits(nQ));
+  }
   const plain = new Uint8Array(w.bytes);
 
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -150,8 +171,17 @@ export async function decryptQr(text, keyHexes) {
   if (flags & 1) points = points.map(() => r.read(8) / 2);
   let nOpts = Array(h.nQ).fill(h.nOpt);
   if (flags & 2) nOpts = nOpts.map(() => r.read(4));
+  let variant = null;
+  if (flags & 4) {
+    const label = String.fromCharCode(65 + r.read(5));
+    const shuffled = r.read(1);
+    const group = hex(Array.from({ length: 4 }, () => r.read(8)));
+    const order = shuffled ? Array.from({ length: h.nQ }, () => r.read(orderBits(h.nQ))) : [...Array(h.nQ).keys()];
+    variant = { label, group, order };
+  }
   return {
     examId: h.examId,
+    variant,
     mode,
     noteSur,
     questions: correct.map((c, i) => ({ nOpt: nOpts[i], correct: c.slice(0, nOpts[i]), points: points[i] })),

@@ -124,9 +124,12 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
   (gagnaient de la place mais cassaient l'alignement). « 1 pt » masqué si toutes les questions
   valent pareil (`subject.show_points`). 20 questions « 1 ligne + 4 réponses courtes » = 1 page ;
   énoncés de 2 lignes + réponses de ~20 caractères : ~11 par page.
-- **Modèles A/B** (2026-11-03) : `exam.variants[examId] = {label, order}` (local, pas dans le QR,
-  le QR du modèle B porte déjà le corrigé dans l'ordre imprimé). `Copy.originalOrder` remet le
-  détail dans l'ordre de l'éditeur à l'enregistrement ; résultat `variant`, colonne CSV « Sujet ».
+- **Modèles A/B** (2026-11-03) : le QR de chaque modèle porte le corrigé dans l'ordre imprimé et,
+  depuis 0.3.1, le bloc `flags&4` (lettre, groupe A/B 4 o, ordre si mélangé) : correction complète
+  sans le QCM local (QR v12 → v13 pour 20 questions, toujours lu). Copie locale de secours :
+  `exam.variants[examId] = {label, group, order}` (anciens PDF). `Copy.originalOrder` remet le
+  détail dans l'ordre de l'éditeur ; résultat `variant` + `group` (titre `QCM <groupe>` sans QCM
+  local, doublons détectés entre A et B), colonne CSV « Sujet ».
 - **Ligne d'écriture** dans les cadres du cartouche (`sheet.NAME_GUIDE_MM`).
 
 - **Correction en carrousel** (2026-11-03) : `deck` dans `renderScanner` (ordre d'arrivée).
@@ -164,7 +167,7 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
 2. Premier commit.
 3. Tester la génération IA avec une vraie clé OpenRouter (qualité pour du CM2, PDF scanné,
    photo de cahier) et ajuster le prompt système (`ai.SYSTEM`) si besoin.
-4. Sujets A/B mélangés (un QR par copie, déjà compatible).
+4. Mélanger aussi l'ordre des réponses dans le sujet B (même principe : ordre dans le QR).
 5. OCR des noms sur `name_fields` (manuscrit en capitales : TrOCR / PaddleOCR côté serveur,
    ou API) + rapprochement flou avec une liste de classe importée (CSV).
 6. Formules mathématiques (KaTeX).

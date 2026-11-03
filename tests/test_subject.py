@@ -127,7 +127,8 @@ def test_dense_twenty_questions_one_page():
     ctx, box = subject._ctx(exam, sheet.STANDARD, "dense", EX)
     assert set(ctx["cols"]) == {2, 4}  # 4 colonnes, ou 2 (alignées sur les mêmes bords)
     assert not ctx["show_pts"]
-    blob = bytes([1, 20, 4, sheet.STANDARD]) + os.urandom(4) + os.urandom(12) + os.urandom(24)
+    # 42 o chiffrés : corrigé + modèle B (lettre, groupe, ordre mélangé) inscrits dans le QR
+    blob = bytes([1, 20, 4, sheet.STANDARD]) + os.urandom(4) + os.urandom(12) + os.urandom(42)
     req = PdfRequest(exam=exam, qr=b45encode(blob), mode="subject", density="dense")
     per_page = subject.layout_pages(req, env, EX, _FETCHER)
     assert len(per_page) == 1

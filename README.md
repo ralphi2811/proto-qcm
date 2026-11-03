@@ -110,7 +110,9 @@ déchiffre le QR avec sa clé, note, enregistre localement
   l'éditeur affiche le nombre de pages du sujet (calculé sur la vraie mise en page) et
   propose la taille qui fait gagner une page.
 - **Deux modèles A / B** : option du PDF, questions mélangées dans le sujet B (QR propre à chaque
-  modèle) ; à la correction, réponses remises dans l'ordre de l'éditeur.
+  modèle) ; à la correction, réponses remises dans l'ordre de l'éditeur. La lettre, l'ordre et
+  un identifiant commun A/B sont chiffrés dans le QR : un téléphone qui n'a que la clé corrige,
+  étiquette et range les copies A et B ensemble (doublons d'élève détectés entre A et B).
 - 4 repères carrés aux coins + le QR en haut à gauche, qui donne l'orientation (photo à
   l'envers ou pivotée de 90° OK).
 - **QR code** : correction d'erreur niveau H (~30 % de la surface récupérable), données en
