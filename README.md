@@ -130,7 +130,11 @@ déchiffre le QR avec sa clé, note, enregistre localement
 - **Correction** : mode scan du téléphone en rafale (photo automatique, bip, « posez la page
   suivante », pas deux photos de la même feuille) ou import de photos / PDF de scanner ; les
   copies défilent horizontalement, une par écran (glissé au doigt ou trackpad, flèches,
-  ← →, pastilles d'état).
+  ← →, pastilles d'état). Sur grand écran, la feuille est à gauche (à la hauteur de l'écran)
+  et le nom, les alertes et « Enregistrer » à droite : toute la copie tient dans une vue.
+  Copie de plusieurs pages : un onglet par page (« · n à vérifier » s'il reste des cases
+  douteuses) ; les pages d'un même élève sont regroupées par numéro d'exemplaire (dans
+  n'importe quel ordre) ou, sujet non numéroté, dans l'ordre d'arrivée.
 
 ## Arborescence
 

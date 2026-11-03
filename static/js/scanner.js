@@ -349,7 +349,7 @@ export function renderScanner(view) {
   }
 
   view.replaceChildren(
-    h('section', { class: 'page' },
+    h('section', { class: 'page wide' },
       h('div', { class: 'page-head' }, h('h1', {}, 'Corriger')),
       h('div', { class: 'card scan-start' },
         h('button', { class: 'btn primary big', onclick: startScan }, icon('camera'), 'Scanner une page'),
@@ -429,7 +429,9 @@ class Copy {
     this.identStatus = h('div', { class: 'ident-status' });
     this.touched = new Set(); // champs saisis à la main : jamais écrasés par la lecture IA
     this.canvases = h('div', { class: 'canvases' });
-    this.card = h('article', { class: 'card result-card' },
+    this.shown = null; // page affichée (copie de plusieurs pages : une à la fois, onglets)
+    // grand écran : la feuille à gauche, tenant dans la hauteur de l'écran, les infos à droite
+    this.card = h('article', { class: `card result-card${this.nPages > 1 ? ' multi' : ''}` },
       h('div', { class: 'result-head' },
         h('div', {},
           h('h3', {}, this.title, this.copyNo ? h('span', { class: 'muted' }, ` · n° ${this.copyNo}`) : null),
@@ -437,19 +439,31 @@ class Copy {
         ),
         this.scoreBox,
       ),
-      this.pagesBox,
-      this.alerts,
-      this.identBox,
-      this.identStatus,
-      h('div', { class: 'legend small' },
-        h('span', { class: 'lg ok' }, 'juste'), h('span', { class: 'lg ko' }, 'fausse'),
-        h('span', { class: 'lg miss' }, 'oubliée'), h('span', { class: 'lg unsure' }, 'douteuse / entourée')),
-      this.canvases,
-      h('div', { class: 'row end' },
+      h('div', { class: 'copy-sheet' }, this.pagesBox, this.canvases),
+      h('div', { class: 'copy-info' },
+        this.alerts,
+        this.identBox,
+        this.identStatus,
+        h('div', { class: 'legend small' },
+          h('span', { class: 'lg ok' }, 'juste'), h('span', { class: 'lg ko' }, 'fausse'),
+          h('span', { class: 'lg miss' }, 'oubliée'), h('span', { class: 'lg unsure' }, 'douteuse / entourée')),
+      ),
+      h('div', { class: 'row end copy-actions' },
         h('button', { class: 'btn ghost', onclick: () => { this.discarded = true; this.onClose(this); } }, 'Ignorer'),
         h('button', { class: 'btn primary', onclick: () => this.save() }, icon('check'), 'Enregistrer'),
       ),
     );
+  }
+
+  showPage(n) {
+    if (!this.pages.has(n)) return;
+    this.shown = n;
+    this.update();
+  }
+
+  /** Cases encore à vérifier sur une page (douteuses ou entourées, non corrigées à la main). */
+  doubtful(n) {
+    return this.cellsOf(n).filter((c) => (c.circled || c.state === 'unsure') && !this.overridden.has(`${c.q}:${c.o}`)).length;
   }
 
   addPage(n, scan) {
@@ -457,17 +471,18 @@ class Copy {
     let entry = this.pages.get(n);
     if (!entry) {
       const canvas = h('canvas', { class: 'sheet-canvas' });
-      entry = { canvas, img: new Image(), label: h('div', { class: 'page-label muted small' }) };
+      entry = { canvas, img: new Image() };
       canvas.addEventListener('click', (e) => this.onClick(n, e));
-      entry.wrap = h('div', { class: 'canvas-wrap', 'data-page': n }, canvas);
+      entry.block = h('div', { class: 'canvas-wrap', 'data-page': n }, canvas);
       // insertion dans l'ordre des pages
       const after = [...this.canvases.children].find((el) => Number(el.dataset.page) > n);
-      const block = h('div', { 'data-page': n }, this.nPages > 1 ? entry.label : null, entry.wrap);
-      this.canvases.insertBefore(block, after ?? null);
+      this.canvases.insertBefore(entry.block, after ?? null);
       this.pages.set(n, entry);
     }
     entry.scan = scan;
-    entry.label.textContent = `Page ${n} / ${this.nPages}${replacing ? ' (remplacée)' : ''}`;
+    entry.replaced = replacing;
+    // on reste sur la page qu'on vérifie : une page qui arrive ensuite ne prend pas l'écran
+    if (this.shown == null) this.shown = n;
     for (const c of this.cellsOf(n)) {
       const k = `${c.q}:${c.o}`;
       this.overridden.delete(k);
@@ -590,9 +605,17 @@ class Copy {
 
     const missing = this.missingPages();
     this.pagesBox.replaceChildren(...(this.nPages > 1
-      ? Array.from({ length: this.nPages }, (_, i) => i + 1).map((p) =>
-          h('span', { class: `page-chip ${this.pages.has(p) ? 'ok' : 'todo'}` }, `${this.pages.has(p) ? '✓' : '…'} page ${p}`))
+      ? Array.from({ length: this.nPages }, (_, i) => i + 1).map((p) => {
+          const has = this.pages.has(p);
+          const doubt = has ? this.doubtful(p) : 0;
+          return h('button', {
+            class: `page-chip ${has ? 'ok' : 'todo'}${p === this.shown ? ' on' : ''}`, disabled: !has,
+            title: has ? `Afficher la page ${p}${this.pages.get(p).replaced ? ' (photo remplacée)' : ''}` : 'Page pas encore photographiée',
+            onclick: () => this.showPage(p),
+          }, `${has ? '✓' : '…'} Page ${p}`, doubt ? h('span', { class: 'page-doubt' }, ` · ${doubt} à vérifier`) : null);
+        })
       : []));
+    for (const [n, e] of this.pages) e.block.hidden = n !== this.shown;
 
     const flagged = (pred) => this.allCells().filter((c) => pred(c) && !this.overridden.has(`${c.q}:${c.o}`)).map((c) => `${c.q + 1}${L(c.o)}`);
     const circled = flagged((c) => c.circled);

@@ -131,7 +131,11 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
 
 - **Correction en carrousel** (2026-11-03) : `deck` dans `renderScanner` (ordre d'arrivée).
   `.deck-stage` = défilement horizontal natif aimanté (scroll-snap), hauteur calée sur la copie
-  affichée (ResizeObserver) ; flèches, ←/→, pastilles `Copy.status()` ok/warn/busy. Enregistrer/Ignorer retire la
+  affichée (ResizeObserver) ; flèches, ←/→, pastilles `Copy.status()` ok/warn/busy.
+  Carte `result-card` en grille : ≥ 900 px, feuille à gauche (`--sheet-h` = hauteur d'écran
+  moins barres, largeur A4 déduite) et `copy-info`/`copy-actions` à droite ; une colonne sinon.
+  Plusieurs pages : `Copy.shown` + onglets (`.page-chip`, `doubtful(n)`), une page à la fois ;
+  la page affichée ne change pas quand une autre page arrive. `main` élargi (`.page.wide`). Enregistrer/Ignorer retire la
   copie, la suivante arrive à sa place et la page remonte en haut de la copie. Les copies qui
   arrivent pendant la correction s'ajoutent à la fin sans déplacer la copie affichée.
 

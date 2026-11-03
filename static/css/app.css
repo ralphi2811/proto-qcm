@@ -229,6 +229,32 @@ input:focus, select:focus, .rich:focus { outline: 2px solid color-mix(in srgb, v
 }
 .canvas-wrap { margin: 10px 0; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: #fff; }
 .sheet-canvas { width: 100%; display: block; cursor: pointer; touch-action: manipulation; }
+
+/* Copie à corriger. Téléphone : une colonne (en-tête, infos, feuille, boutons). Grand écran :
+   la feuille A4 à gauche, à la hauteur de l'écran (sous la barre de navigation des copies),
+   en-tête, infos et boutons à droite : toute la copie tient dans une seule vue. */
+.result-card { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "info" "sheet" "actions"; }
+.result-card > .result-head { grid-area: head; }
+.copy-info { grid-area: info; min-width: 0; }
+.copy-sheet { grid-area: sheet; min-width: 0; }
+.copy-actions { grid-area: actions; margin-top: 4px; }
+.copy-sheet .pages-status { margin: 10px 0 0; }
+@media (min-width: 900px) {
+  .result-card {
+    --sheet-h: max(420px, calc(100dvh - 210px));
+    grid-template-columns: min(calc(var(--sheet-h) * 0.7071), 58%) minmax(300px, 1fr);
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas: "sheet head" "sheet info" "sheet actions";
+    column-gap: 22px;
+  }
+  .copy-sheet .pages-status { margin: 0 0 8px; }
+  .copy-sheet .canvases .canvas-wrap { margin: 0; }
+  .result-card.multi { --sheet-h: max(420px, calc(100dvh - 250px)); } /* onglets des pages au-dessus */
+  .copy-actions { align-self: end; }
+}
+/* page Corriger : plus large pour la feuille + les infos (le reste garde la largeur habituelle) */
+main:has(> .page.wide) { max-width: 1400px; }
+.page.wide > :not(.deck) { max-width: 888px; margin-left: auto; margin-right: auto; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); }
 .lg::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 .lg.ok::before { background: rgba(22, 163, 74, .6); }
@@ -299,10 +325,12 @@ input:focus, select:focus, .rich:focus { outline: 2px solid color-mix(in srgb, v
 /* ---------- copies multi-pages ---------- */
 .pages-status { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
 .pages-status:empty { display: none; }
-.page-chip { font-size: .8rem; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.page-chip { font: inherit; font-size: .82rem; padding: 4px 12px; border-radius: 999px; border: 1.5px solid transparent; background: var(--surface-2); color: var(--muted); cursor: pointer; }
 .page-chip.ok { background: var(--ok-soft); color: var(--ok); font-weight: 600; }
-.page-label { margin: 12px 0 4px; }
-.canvases .canvas-wrap { margin-top: 4px; }
+.page-chip.on { border-color: currentColor; }
+.page-chip:disabled { cursor: default; }
+.page-doubt { color: var(--warn); }
+.canvases .canvas-wrap { margin-top: 8px; }
 
 /* ---------- copies à corriger : une à la fois ---------- */
 .deck { margin-top: 16px; scroll-margin-top: 64px; }
