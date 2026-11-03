@@ -24,7 +24,17 @@ def test_scan_rejects_garbage():
 
 def test_static_and_sw():
     assert client.get("/").status_code == 200
-    assert client.get("/sw.js").status_code == 200
+    sw = client.get("/sw.js")
+    assert sw.status_code == 200 and "__BUILD_ID__" not in sw.text
+
+
+def test_healthz_reports_version():
+    from app.version import BUILD_ID, VERSION
+
+    v = client.get("/healthz").json()
+    assert v["ok"] and v["version"] == VERSION
+    assert client.get("/api/health").json() == v
+    assert f"qcm-{BUILD_ID}" in client.get("/sw.js").text
 
 
 def test_layout_counts_pages():

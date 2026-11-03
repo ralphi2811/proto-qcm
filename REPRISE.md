@@ -129,8 +129,9 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
   détail dans l'ordre de l'éditeur à l'enregistrement ; résultat `variant`, colonne CSV « Sujet ».
 - **Ligne d'écriture** dans les cadres du cartouche (`sheet.NAME_GUIDE_MM`).
 
-- **Correction une copie à la fois** (2026-11-03) : `deck` dans `renderScanner` (ordre d'arrivée,
-  flèches, ←/→, glissé, pastilles `Copy.status()` ok/warn/busy). Enregistrer/Ignorer retire la
+- **Correction en carrousel** (2026-11-03) : `deck` dans `renderScanner` (ordre d'arrivée).
+  `.deck-stage` = défilement horizontal natif aimanté (scroll-snap), hauteur calée sur la copie
+  affichée (ResizeObserver) ; flèches, ←/→, pastilles `Copy.status()` ok/warn/busy. Enregistrer/Ignorer retire la
   copie, la suivante arrive à sa place et la page remonte en haut de la copie. Les copies qui
   arrivent pendant la correction s'ajoutent à la fin sans déplacer la copie affichée.
 
@@ -143,8 +144,10 @@ Puis Réglages → « Transférer vers un smartphone » pour copier la clé de c
 - `app/sheet.py` : géométrie de la grille, utilisée par le PDF **et** par l'OMR (à modifier ici uniquement)
 - `app/payload.py` / `static/js/crypto.js` : format du QR (les deux doivent rester synchronisés)
 - `app/omr.py` : lecture optique ; `app/render.py` + `app/templates/exam.html` : PDF
-- `static/js/` : editor, scanner, results, settings, store, ui ; `static/sw.js` (penser à
-  incrémenter `CACHE` quand les fichiers statiques changent)
+- `static/js/` : editor, scanner, results, settings, store, ui ; `static/sw.js` (le nom du
+  cache `qcm-__BUILD_ID__` est remplacé par `/sw.js` côté serveur : version-commit)
+- `app/version.py` : version (`APP_VERSION`/`APP_COMMIT`/`APP_BUILT` fournis par la CI, sinon
+  pyproject) exposée par `/healthz` et `/api/health`, affichée en bas des Réglages
 - `tests/test_pipeline.py` : génère une copie, simule une photo dégradée, la relit
 
 ## À faire / pistes

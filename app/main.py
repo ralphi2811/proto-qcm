@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import ai, omr, render, sheet
+from .version import BUILD_ID, VERSION, info as version_info
 from .payload import PayloadError
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -22,12 +23,13 @@ MAX_UPLOAD = 15 * 1024 * 1024
 MAX_PDF_UPLOAD = 80 * 1024 * 1024  # PDF d'une classe entière passée au scanner
 MAX_PDF_PAGES = 200
 
-app = FastAPI(title="Proto QCM", version="0.1.0")
+app = FastAPI(title="Proto QCM", version=VERSION)
 
 
 @app.get("/api/health")
+@app.get("/healthz")
 def health():
-    return {"ok": True}
+    return {"ok": True, **version_info()}
 
 
 @app.get("/api/capacity")
@@ -171,7 +173,10 @@ def qr_svg(body: QrIn):
 @app.get("/sw.js")
 def service_worker():
     # servi à la racine pour que sa portée couvre toute l'app
-    return FileResponse(STATIC / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+    # le nom du cache porte l'identifiant du déploiement : chaque mise à jour remplace le service
+    # worker et purge l'ancienne interface (pas de numéro à incrémenter à la main)
+    js = (STATIC / "sw.js").read_text().replace("__BUILD_ID__", BUILD_ID)
+    return Response(js, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
 
 class RevalidatedStatic(StaticFiles):

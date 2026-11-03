@@ -57,6 +57,13 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=pr
 
+      # version : celle du tag v* s'il y en a un, sinon celle de pyproject.toml
+      - id: ver
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then v="${GITHUB_REF_NAME#v}"; else v=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml); fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "built=$(date -u +%Y-%m-%dT%H:%MZ)" >> "$GITHUB_OUTPUT"
+
       # construit l'image et vérifie qu'elle démarre et génère un PDF avant toute publication
       - name: Construction
         uses: docker/build-push-action@v6
@@ -64,12 +71,17 @@ jobs:
           context: .
           load: true
           tags: proto-qcm:ci
+          build-args: |
+            APP_VERSION=${{ steps.ver.outputs.version }}
+            APP_COMMIT=${{ github.sha }}
+            APP_BUILT=${{ steps.ver.outputs.built }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Test de fumée
         run: |
           docker run -d --name qcm --read-only --tmpfs /tmp --tmpfs /home/app/.cache -p 8000:8000 proto-qcm:ci
           for _ in $(seq 30); do curl -fs localhost:8000/api/health && break; sleep 1; done
+          curl -fs localhost:8000/healthz | grep -q '"commit":"'"${GITHUB_SHA::7}"'"'
           curl -fs -o /dev/null localhost:8000/
           curl -fs -X POST localhost:8000/api/layout -H 'Content-Type: application/json' \
             -d '{"exam":{"title":"CI","questions":[{"html":"Q ?","options":[{"html":"A"},{"html":"B"}]}]},"box_size":"large"}'
@@ -92,6 +104,10 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          build-args: |
+            APP_VERSION=${{ steps.ver.outputs.version }}
+            APP_COMMIT=${{ github.sha }}
+            APP_BUILT=${{ steps.ver.outputs.built }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
 

@@ -21,7 +21,10 @@ WORKDIR /app
 COPY --from=deps /app/.venv /app/.venv
 COPY app ./app
 COPY static ./static
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 WEB_CONCURRENCY=2
+# version affichée par /healthz et dans Réglages (fournie par la CI)
+ARG APP_VERSION="" APP_COMMIT="" APP_BUILT=""
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 WEB_CONCURRENCY=2 \
+    APP_VERSION=$APP_VERSION APP_COMMIT=$APP_COMMIT APP_BUILT=$APP_BUILT
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

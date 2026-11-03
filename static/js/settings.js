@@ -243,8 +243,19 @@ export function renderSettings(view) {
           backupInput,
         ),
       ),
+      versionLine(),
       !globalThis.crypto?.subtle ? h('div', { class: 'card alert error' },
         "Cette page n'est pas servie en HTTPS : le chiffrement (WebCrypto) est indisponible. Utilisez https:// ou localhost.") : null,
     ),
   );
+}
+
+/** Version déployée (serveur) : permet de vérifier qu'une mise à jour est bien arrivée. */
+function versionLine() {
+  const el = h('p', { class: 'muted small version-line' }, 'Version…');
+  fetch('/api/health', { cache: 'no-store' }).then((r) => r.json()).then((v) => {
+    const built = v.built ? ` · ${new Date(v.built).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}` : '';
+    el.textContent = `QCM Studio ${v.version} (${v.commit})${built}`;
+  }).catch(() => { el.textContent = 'Version inconnue (serveur injoignable)'; });
+  return el;
 }

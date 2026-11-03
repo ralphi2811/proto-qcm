@@ -160,9 +160,9 @@ export function renderScanner(view) {
   const reportError = (label, msg) =>
     queue.prepend(h('div', { class: 'card alert error' }, h('strong', {}, label), ' : ', msg));
 
-  // ---- copies : une à la fois, navigation horizontale (flèches, glissé, pastilles).
-  // Les nouvelles copies s'ajoutent à la fin sans déplacer celle qu'on corrige ; après
-  // « Enregistrer », la suivante prend sa place, en haut.
+  // ---- copies : carrousel horizontal (défilement natif aimanté, flèches, pastilles).
+  // Les nouvelles copies s'ajoutent à droite sans déplacer celle qu'on corrige ; après
+  // « Enregistrer », la suivante glisse à sa place, en haut.
   const deck = []; // copies à traiter, dans l'ordre d'arrivée
   let cur = 0;
   let done = 0;
@@ -175,18 +175,29 @@ export function renderScanner(view) {
     h('div', { class: 'deck-nav' }, prevBtn, h('div', { class: 'deck-mid' }, counter, strip), nextBtn),
     stage);
 
-  function show(i, { scroll = true } = {}) {
+  // la hauteur du carrousel suit la copie affichée (sinon la plus longue imposerait la sienne)
+  const fit = () => { const c = deck[cur]?.card; stage.style.height = c ? `${c.offsetHeight}px` : ''; };
+  const sizes = new ResizeObserver(fit);
+
+  function show(i, { scroll = true, smooth = true } = {}) {
     if (!deck.length || i < 0 || i >= deck.length) return;
-    const dir = Math.sign(i - cur);
     cur = i;
-    const card = deck[cur].card;
-    card.classList.remove('from-left', 'from-right');
-    if (dir) { void card.offsetWidth; card.classList.add(dir > 0 ? 'from-right' : 'from-left'); }
-    stage.replaceChildren(card);
-    renderStrip();
+    renderStrip(); // affiche le carrousel avant de mesurer
+    stage.scrollTo({ left: i * stage.clientWidth, behavior: smooth ? 'smooth' : 'instant' });
+    fit();
     // la copie commence en haut de l'écran, même si on avait défilé jusqu'au bouton Enregistrer
     if (scroll && deckBox.getBoundingClientRect().top < 0) deckBox.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
+
+  // défilement au doigt / trackpad : la copie aimantée devient la copie courante
+  let scrollTimer = 0;
+  stage.addEventListener('scroll', () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      const i = Math.max(0, Math.min(deck.length - 1, Math.round(stage.scrollLeft / Math.max(1, stage.clientWidth))));
+      if (i !== cur) { cur = i; fit(); renderStrip(); }
+    }, 80);
+  }, { passive: true });
 
   function renderStrip() {
     deckBox.hidden = !deck.length && !done;
@@ -203,11 +214,13 @@ export function renderScanner(view) {
         onclick: () => show(i),
       }, st === 'busy' ? h('span', { class: 'spinner small' }) : st === 'ok' ? icon('check') : icon('alert'), c.chipLabel());
     }));
-    strip.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const on = strip.querySelector('.on');
+    if (on) strip.scrollTo({ left: on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2, behavior: 'smooth' });
     if (!left && done) {
       stage.replaceChildren(h('div', { class: 'card deck-done' },
         h('p', {}, icon('check'), ` Toutes les copies sont traitées (${done} enregistrée${done > 1 ? 's' : ''}).`),
         h('a', { class: 'btn', href: '#/results' }, 'Voir les résultats')));
+      stage.style.height = '';
     }
   }
   let stripQueued = false;
@@ -218,32 +231,27 @@ export function renderScanner(view) {
   }
 
   function addToDeck(copy) {
+    if (!deck.length) stage.replaceChildren(); // retire l'écran « toutes traitées »
     deck.push(copy);
-    if (deck.length === 1) show(0, { scroll: false });
+    stage.append(copy.card);
+    sizes.observe(copy.card);
+    if (deck.length === 1) show(0, { scroll: false, smooth: false });
     else renderStrip();
   }
 
-  /** Copie enregistrée ou ignorée : elle quitte la pile, la suivante prend sa place. */
+  /** Copie enregistrée ou ignorée : elle quitte le carrousel, la suivante prend sa place. */
   function closeCopy(copy) {
     const i = deck.indexOf(copy);
     if (i < 0) return;
     if (copy.saved) done++;
     deck.splice(i, 1);
-    if (cur > i) cur--;
-    if (deck.length) { const next = Math.min(i, deck.length - 1); cur = next - 1; show(next); } // arrive par la droite
+    sizes.unobserve(copy.card);
+    copy.card.remove(); // les copies suivantes glissent d'un cran : la suivante est à l'écran
+    if (cur > i || cur >= deck.length) cur = Math.max(0, cur - 1);
+    if (deck.length) show(cur, { smooth: false });
     else { cur = 0; renderStrip(); }
   }
 
-  // glissé horizontal (téléphone) et flèches du clavier
-  let touch = null;
-  stage.addEventListener('touchstart', (e) => { const t = e.touches[0]; touch = e.touches.length === 1 ? { x: t.clientX, y: t.clientY } : null; }, { passive: true });
-  stage.addEventListener('touchend', (e) => {
-    if (!touch) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - touch.x, dy = t.clientY - touch.y;
-    touch = null;
-    if (Math.abs(dx) > 70 && Math.abs(dx) > 2 * Math.abs(dy)) show(cur + (dx < 0 ? 1 : -1));
-  });
   const onKey = (e) => {
     if (e.target.closest?.('input, textarea, select, [contenteditable]') || document.querySelector('dialog[open]')) return;
     if (e.key === 'ArrowLeft') show(cur - 1);
@@ -359,7 +367,7 @@ export function renderScanner(view) {
       deckBox,
     ),
   );
-  return () => document.removeEventListener('keydown', onKey);
+  return () => { document.removeEventListener('keydown', onKey); sizes.disconnect(); };
 }
 
 /** Lit une réponse NDJSON au fil de l'eau (une ligne JSON par page). */

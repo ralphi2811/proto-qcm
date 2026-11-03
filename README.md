@@ -76,6 +76,12 @@ docker compose pull && docker compose up -d
 - *Par le serveur (sans SSH entrant, adapté au tunnel)* : une tâche cron
   `*/10 * * * * cd /srv/qcm && docker compose pull -q app && docker compose up -d`.
 
+**Version** : `version` de `pyproject.toml` (ou le tag `v*`) + commit, injectés par la CI.
+Vérifier ce qui tourne : `https://qcm.mondomaine.fr/healthz` (ou Réglages, en bas de page).
+Pour une nouvelle version : augmenter `version` dans `pyproject.toml`, puis
+`git tag v0.3.0 && git push --tags` (image `0.3.0` en plus de `latest`). Le cache du
+service worker porte cet identifiant : chaque déploiement remplace l'interface hors-ligne.
+
 Construction locale : `docker build -t ghcr.io/ralphi2811/proto-qcm:latest .` puis
 `docker compose up -d --pull never`.
 
@@ -123,7 +129,8 @@ déchiffre le QR avec sa clé, note, enregistre localement
 
 - **Correction** : mode scan du téléphone en rafale (photo automatique, bip, « posez la page
   suivante », pas deux photos de la même feuille) ou import de photos / PDF de scanner ; les
-  copies s'affichent une à la fois (flèches, ← →, glissé, pastilles d'état).
+  copies défilent horizontalement, une par écran (glissé au doigt ou trackpad, flèches,
+  ← →, pastilles d'état).
 
 ## Arborescence
 
