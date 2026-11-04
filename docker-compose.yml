@@ -17,9 +17,11 @@ services:
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-}
       AI_ACCESS_CODE: ${AI_ACCESS_CODE:-}
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
-    # accès direct depuis la machine (facultatif) ; le public passe par le tunnel
-    ports:
-      - "127.0.0.1:${QCM_PORT:-8000}:8000"
+    # Aucun port publié : cloudflared joint l'app par le réseau de la pile (http://app:8000).
+    # Accès direct depuis la machine (dépannage) : décommenter, et choisir QCM_PORT dans .env
+    # (Portainer occupe souvent le 8000).
+    # ports:
+    #   - "127.0.0.1:${QCM_PORT:-8080}:8000"
     read_only: true
     tmpfs:
       - /tmp

@@ -55,7 +55,8 @@ docker compose pull && docker compose up -d
 
 1. **Tunnel** : Cloudflare Zero Trust → Networks → Tunnels → *Create a tunnel*
    (Cloudflared) → copier le jeton dans `CLOUDFLARE_TUNNEL_TOKEN`. Onglet *Public
-   Hostname* : `qcm.mondomaine.fr` → service `HTTP` `app:8000`. Aucun port à ouvrir ; le
+   Hostname* : `qcm.mondomaine.fr` → service `HTTP` `app:8000`. Aucun port à ouvrir ni à
+   publier (le bloc `ports` du compose est commenté, pour dépannage local seulement) ; le
    HTTPS fourni par Cloudflare suffit pour la caméra, le chiffrement et l'installation PWA.
 2. **Image** : le paquet GHCR est privé par défaut. Le rendre public (GitHub → Packages →
    proto-qcm → *Package settings* → *Change visibility*) ou faire `docker login ghcr.io`
