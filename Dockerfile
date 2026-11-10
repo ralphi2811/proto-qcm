@@ -13,9 +13,15 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 FROM python:3.12-slim
 # pango/harfbuzz : rendu PDF WeasyPrint ; fontconfig (fc-match) + DejaVu : la mise en page
 # mesure le texte avec la police réellement utilisée dans le PDF
+# Cache des polices : fontconfig le valide avec la date des dossiers à la nanoseconde, mais
+# l'image ne garde que les secondes. Sans cet arrondi, le cache construit par apt est jugé
+# périmé au démarrage et chaque worker le reconstruit dans ~/.cache, en même temps que l'autre
+# (« Fontconfig error: No writable cache directories »).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fontconfig fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
+    && t=$(date +%s) && find /usr/share/fonts /usr/local/share/fonts -type d -exec touch -d "@$t" {} + \
+    && fc-cache -f \
     && useradd --create-home --uid 10001 app
 WORKDIR /app
 COPY --from=deps /app/.venv /app/.venv
